@@ -30,7 +30,7 @@ class UltimateQuizSolver:
     
     def __init__(self, email: str, secret: str, aipipe_token: str, 
                  aipipe_base_url: str = "https://aipipe.org/openai/v1",
-                 model_name: str = "openai/gpt-4o-mini"):
+                 model_name: str = "gpt-4o-mini"):
         self.email = email
         self.secret = secret
         self.aipipe_token = aipipe_token

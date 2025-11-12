@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     student_secret: str = Field(..., min_length=1, description="Authentication secret")
     aipipe_token: str = Field(..., min_length=20, description="AIPipe API token")
     aipipe_base_url: str = Field(default="https://aipipe.org/openai/v1", description="AIPipe base URL")
-    openai_model: str = Field(default="openai/gpt-4o-mini", description="Model name (with provider prefix)")
+    openai_model: str = Field(default="gpt-4o-mini", description="Model name (without provider prefix)")
     port: int = Field(default=7860, ge=1, le=65535)
     max_concurrent_quizzes: int = Field(default=3, ge=1, le=10)
     
