@@ -168,20 +168,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Application starting up")
     
-    # Verify AIPipe API token works
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.aipipe_base_url.rstrip('/v1')}/models",
-                headers={"Authorization": f"Bearer {settings.aipipe_token}"},
-                timeout=10.0
-            )
-            if response.status_code == 200:
-                logger.success("✓ AIPipe API token validated")
-            else:
-                logger.warning(f"⚠ AIPipe API token validation returned: {response.status_code}")
-    except Exception as e:
-        logger.error(f"✗ Failed to validate AIPipe API token: {e}")
+    # Log AIPipe configuration (validation happens during actual API calls)
+    logger.info(f"✓ AIPipe configured: {settings.aipipe_base_url}")
+    logger.info(f"✓ Model: {settings.openai_model}")
+    logger.info(f"✓ Token length: {len(settings.aipipe_token)} chars")
     
     # Verify Playwright installation
     try:
@@ -329,17 +319,8 @@ async def health_check():
         "solver_pool": f"{solver_pool.active_count}/{solver_pool.max_concurrent}"
     }
     
-    # Check AIPipe API
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.aipipe_base_url.rstrip('/v1')}/models",
-                headers={"Authorization": f"Bearer {settings.aipipe_token}"},
-                timeout=5.0
-            )
-            components["aipipe_api"] = "healthy" if response.status_code == 200 else "degraded"
-    except:
-        components["aipipe_api"] = "unhealthy"
+    # Check AIPipe configuration (actual validation happens during API calls)
+    components["aipipe_api"] = "configured" if settings.aipipe_token and len(settings.aipipe_token) > 10 else "not_configured"
     
     # Overall status
     overall_status = "healthy" if all(
