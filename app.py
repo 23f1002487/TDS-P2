@@ -233,7 +233,7 @@ class QuizRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "email": "23f1002487@ds.study.iitm.ac.in",
                 "secret": "this-is-agni",
