@@ -255,8 +255,8 @@ curl -X POST https://USERNAME-llm-quiz.hf.space/quiz \
 Fill the Google Form with:
 1. Email: `23f1002487@ds.study.iitm.ac.in`
 2. Secret: `this-is-agni`
-3. System Prompt: See `PROMPTS.md`
-4. User Prompt: See `PROMPTS.md`
+3. System Prompt: See `prompts.md`
+4. User Prompt: See `prompts.md`
 5. API URL: Your HF Space URL
 6. GitHub URL: Your public repo with MIT License
 

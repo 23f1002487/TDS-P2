@@ -9,15 +9,28 @@ import time
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://vsaketh-tds-p2.hf.space"  # Update with your actual HF Space URL
-# or use: BASE_URL = "http://localhost:7860"  # for local testing
 
-# Your credentials (from .env)
+# ============================================
+# YOUR APP SERVER (Quiz Solver)
+# ============================================
+BASE_URL = "https://vsaketh-tds-p2.hf.space"  # Your HF Space app
+# BASE_URL = "http://localhost:7860"  # Uncomment for local testing
+
+# ============================================
+# QUIZ SERVER (Questions Source)
+# ============================================
+QUIZ_URL = "http://localhost:8000/demo"  # Local mock makeup quiz (3 questions)
+
+# Alternative quiz URLs:
+# QUIZ_URL = "http://localhost:8000/full-quiz"  # Local mock - full quiz (15 questions)
+# QUIZ_URL = "http://localhost:8000/random-quiz/5"  # Local mock - random 5 questions
+# QUIZ_URL = "https://tds-llm-analysis.s-anand.net/demo"  # Real quiz server
+
+# ============================================
+# CREDENTIALS
+# ============================================
 EMAIL = "your-email@ds.study.iitm.ac.in"  # Update with your email
 SECRET = "your-secret-string"  # Update with your secret
-
-# Test quiz URL (you'll need a real one)
-QUIZ_URL = "https://tds-llm-analysis.s-anand.net/demo"  # Update with actual quiz URL
 
 
 def print_section(title):
@@ -131,17 +144,18 @@ def test_quiz_endpoint_validation():
 
 
 def test_quiz_submission():
-    """Test POST /quiz with valid data (if you have a real quiz URL)"""
+    """Test POST /quiz with valid data"""
     print_section("TEST 5: Quiz Submission (POST /quiz)")
     
-    if EMAIL == "your-email@ds.study.iitm.ac.in" or QUIZ_URL == "https://example.com/quiz":
-        print("⚠️  SKIPPED: Update EMAIL, SECRET, and QUIZ_URL variables in script")
-        print("   to test actual quiz submission")
-        return None
+    # Check if credentials are set
+    if EMAIL == "your-email@ds.study.iitm.ac.in":
+        print("⚠️  WARNING: Using default email. Update EMAIL and SECRET in the script")
+        print("   Attempting to test with mock server anyway...\n")
     
     try:
         print(f"Submitting quiz: {QUIZ_URL}")
         print(f"Using email: {EMAIL}")
+        print(f"Target server: {BASE_URL}\n")
         
         payload = {
             "email": EMAIL,
@@ -149,20 +163,39 @@ def test_quiz_submission():
             "url": QUIZ_URL
         }
         
-        response = requests.post(f"{BASE_URL}/quiz", json=payload, timeout=10)
+        print("Sending POST request...")
+        response = requests.post(f"{BASE_URL}/quiz", json=payload, timeout=30)
         print(f"Status Code: {response.status_code}")
-        print(f"Response: {json.dumps(response.json(), indent=2)}")
+        
+        try:
+            response_data = response.json()
+            print(f"Response: {json.dumps(response_data, indent=2)}")
+        except:
+            print(f"Response Text: {response.text}")
         
         if response.status_code == 202:
-            print("✅ Quiz submission ACCEPTED (processing in background)")
-            data = response.json()
-            print(f"   Request ID: {data.get('request_id')}")
-            print(f"   Status: {data.get('status')}")
+            print("\n✅ Quiz submission ACCEPTED (processing in background)")
+            if isinstance(response_data, dict):
+                print(f"   Request ID: {response_data.get('request_id', 'N/A')}")
+                print(f"   Status: {response_data.get('status', 'N/A')}")
             return True
+        elif response.status_code == 200:
+            print("\n✅ Quiz submission SUCCESSFUL")
+            return True
+        elif response.status_code == 403:
+            print("\n❌ Authentication failed - check EMAIL and SECRET")
+            return False
         else:
-            print(f"⚠️  Unexpected status code: {response.status_code}")
+            print(f"\n⚠️  Unexpected status code: {response.status_code}")
             return False
             
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ Connection error: Cannot reach {BASE_URL}")
+        print("   Make sure your app server is running!")
+        return False
+    except requests.exceptions.Timeout:
+        print(f"❌ Request timeout after 30 seconds")
+        return False
     except Exception as e:
         print(f"❌ Quiz submission test FAILED: {e}")
         return False

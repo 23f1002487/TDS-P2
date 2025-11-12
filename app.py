@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings
 from loguru import logger
 import httpx
 
-from ultimate_quiz_solver import UltimateQuizSolver
+from quiz_solver import UltimateQuizSolver
 
 
 # ============================================

@@ -27,7 +27,7 @@ uvicorn app:app --reload --port 7860
 curl http://localhost:7860/health
 ```
 
-**That's it!** See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed instructions.
+**That's it!** See [deployment_guide.md](deployment_guide.md) for detailed instructions.
 
 ---
 
@@ -50,15 +50,17 @@ llm-analysis-quiz/
 │
 ├── 📚 Essential Documentation
 │   ├── README.md                   # This file (start here)
-│   ├── DEPLOYMENT_GUIDE.md         # Step-by-step deployment
-│   └── FIXES_COMPLETE.md           # What was fixed (critical!)
+│   ├── api_readme.md               # API documentation
 │
 ├── 📖 Detailed Documentation (./docs/)
-│   ├── DUCKDB_GUIDE.md             # DuckDB usage guide
-│   ├── FASTAPI_MIGRATION.md        # Why FastAPI
-│   ├── REQUIREMENTS_COMPARISON.md  # Package analysis
-│   ├── PROMPTS.md                  # System/user prompts
-│   ├── QUICK_REFERENCE.md          # Cheat sheet
+│   ├── code_readme.md              # Code overview
+│   ├── deployment_guide.md         # Step-by-step deployment
+│   ├── implementation.md           # Technical details
+│   ├── duckdb_guide.md             # DuckDB usage guide
+│   ├── fastapi_migration.md        # Why FastAPI
+│   ├── requirements_comparison.md  # Package analysis
+│   ├── prompts.md                  # System/user prompts
+│   ├── quick_reference.md          # Cheat sheet
 │   └── ... (see docs/ for more)
 │
 ├── 🧪 Tests

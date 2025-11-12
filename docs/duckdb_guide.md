@@ -122,7 +122,7 @@ Creates in-memory table for fast SQL queries
 ### Basic Pipeline
 
 ```python
-from enhanced_data_processor import EnhancedDataProcessor
+from data_processor import EnhancedDataProcessor
 
 processor = EnhancedDataProcessor()
 

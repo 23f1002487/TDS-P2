@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright, Page, Browser
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 
-from enhanced_data_processor import EnhancedDataProcessor
+from data_processor import EnhancedDataProcessor
 from visualization import Visualizer
 
 
