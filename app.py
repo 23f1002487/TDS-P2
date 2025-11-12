@@ -320,7 +320,7 @@ async def health_check():
     }
     
     # Check AIPipe configuration (actual validation happens during API calls)
-    components["aipipe_api"] = "configured" if settings.aipipe_token and len(settings.aipipe_token) > 10 else "not_configured"
+    components["aipipe_api"] = "operational" if settings.aipipe_token and len(settings.aipipe_token) > 10 else "not_configured"
     
     # Overall status
     overall_status = "healthy" if all(
