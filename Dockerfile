@@ -41,15 +41,15 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Set environment variables for Playwright and Python
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PYTHONUNBUFFERED=1
+
 # Install Playwright browsers (Chromium only for smaller image)
 RUN playwright install chromium
 
 # Copy application code
 COPY . .
-
-# Set environment variables for Playwright and Python
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV PYTHONUNBUFFERED=1
 
 # Expose port for Hugging Face Spaces
 EXPOSE 7860

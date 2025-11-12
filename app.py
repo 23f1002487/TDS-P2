@@ -168,20 +168,20 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Application starting up")
     
-    # Verify OpenAI API key works
+    # Verify AIPipe API token works
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {settings.openai_api_key}"},
+                f"{settings.aipipe_base_url.rstrip('/v1')}/models",
+                headers={"Authorization": f"Bearer {settings.aipipe_token}"},
                 timeout=10.0
             )
             if response.status_code == 200:
-                logger.success("✓ OpenAI API key validated")
+                logger.success("✓ AIPipe API token validated")
             else:
-                logger.warning(f"⚠ OpenAI API key validation returned: {response.status_code}")
+                logger.warning(f"⚠ AIPipe API token validation returned: {response.status_code}")
     except Exception as e:
-        logger.error(f"✗ Failed to validate OpenAI API key: {e}")
+        logger.error(f"✗ Failed to validate AIPipe API token: {e}")
     
     # Verify Playwright installation
     try:
@@ -329,17 +329,17 @@ async def health_check():
         "solver_pool": f"{solver_pool.active_count}/{solver_pool.max_concurrent}"
     }
     
-    # Check OpenAI API
+    # Check AIPipe API
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {settings.openai_api_key}"},
+                f"{settings.aipipe_base_url.rstrip('/v1')}/models",
+                headers={"Authorization": f"Bearer {settings.aipipe_token}"},
                 timeout=5.0
             )
-            components["openai_api"] = "healthy" if response.status_code == 200 else "degraded"
+            components["aipipe_api"] = "healthy" if response.status_code == 200 else "degraded"
     except:
-        components["openai_api"] = "unhealthy"
+        components["aipipe_api"] = "unhealthy"
     
     # Overall status
     overall_status = "healthy" if all(
