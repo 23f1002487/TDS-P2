@@ -1,0 +1,59 @@
+# Python / FastAPI / Playwright project ignore rules
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# Environment files (keep example)
+*.env
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Cache & tooling
+.cache/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# Test reports
+htmlcov/
+.coverage*
+*.cover
+coverage.xml
+
+# Playwright / Browser artifacts
+playwright/.cache/
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Docker
+*.pid
+
+# Archives
+*.tar
+*.zip
+
+# IDE/editor
+.vscode/
+.idea/
+*.iml
