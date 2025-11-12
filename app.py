@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     """Application settings with validation"""
     student_email: EmailStr = Field(..., description="Student email address")
     student_secret: str = Field(..., min_length=1, description="Authentication secret")
-    openai_api_key: str = Field(..., min_length=20, description="OpenAI API key")
+    aipipe_token: str = Field(..., min_length=20, description="AIPipe API token")
+    aipipe_base_url: str = Field(default="https://aipipe.org/openai/v1", description="AIPipe base URL")
+    openai_model: str = Field(default="openai/gpt-4o-mini", description="Model name (with provider prefix)")
     port: int = Field(default=7860, ge=1, le=65535)
     max_concurrent_quizzes: int = Field(default=3, ge=1, le=10)
     
@@ -36,10 +38,10 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_prefix = ""
     
-    @validator('openai_api_key')
-    def validate_openai_key(cls, v):
-        if v.startswith('your_') or v == '':
-            raise ValueError("OpenAI API key must be set to a valid key")
+    @validator('aipipe_token')
+    def validate_aipipe_token(cls, v):
+        if v.startswith('your-') or v == '':
+            raise ValueError("AIPipe token must be set to a valid token")
         return v
 
 
@@ -47,9 +49,11 @@ class Settings(BaseSettings):
 try:
     settings = Settings()
     logger.info("✓ Configuration loaded successfully")
+    logger.info(f"Using AIPipe Base URL: {settings.aipipe_base_url}")
+    logger.info(f"Using Model: {settings.openai_model}")
 except Exception as e:
     logger.error(f"✗ Configuration error: {e}")
-    logger.error("Please set required environment variables: STUDENT_EMAIL, STUDENT_SECRET, OPENAI_API_KEY")
+    logger.error("Please set required environment variables: STUDENT_EMAIL, STUDENT_SECRET, AIPIPE_TOKEN")
     sys.exit(1)
 
 
@@ -274,7 +278,9 @@ async def solve_quiz_background(quiz_url: str, request_id: str):
         async with UltimateQuizSolver(
             email=settings.student_email,
             secret=settings.student_secret,
-            openai_api_key=settings.openai_api_key
+            aipipe_token=settings.aipipe_token,
+            aipipe_base_url=settings.aipipe_base_url,
+            model_name=settings.openai_model
         ) as solver:
             # Solve quiz chain with timeout protection
             await asyncio.wait_for(

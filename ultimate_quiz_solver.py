@@ -1,6 +1,6 @@
 """
 Ultimate Enhanced Quiz Solver
-With Playwright, LangChain, Tenacity, and Loguru
+With Playwright, OpenAI (via AIPipe), Tenacity, and Loguru
 """
 import asyncio
 import json
@@ -12,10 +12,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import httpx
 from playwright.async_api import async_playwright, Page, Browser
 from bs4 import BeautifulSoup
-
-from langchain_openai import ChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from openai import AsyncOpenAI
 
 from enhanced_data_processor import EnhancedDataProcessor
 from visualization import Visualizer
@@ -25,26 +22,28 @@ class UltimateQuizSolver:
     """
     Production-grade quiz solver with:
     - Playwright for reliable JS rendering
-    - LangChain for LLM orchestration
+    - OpenAI (via AIPipe) for LLM inference
     - Tenacity for retry logic  
     - Loguru for better logging
     - httpx for async HTTP
     """
     
-    def __init__(self, email: str, secret: str, openai_api_key: str):
+    def __init__(self, email: str, secret: str, aipipe_token: str, 
+                 aipipe_base_url: str = "https://aipipe.org/openai/v1",
+                 model_name: str = "openai/gpt-4o-mini"):
         self.email = email
         self.secret = secret
-        self.openai_api_key = openai_api_key
+        self.aipipe_token = aipipe_token
+        self.model_name = model_name
         
         # Initialize components
         self.data_processor = EnhancedDataProcessor()
         self.visualizer = Visualizer()
         
-        # LangChain setup
-        self.llm = ChatOpenAI(
-            model="gpt-4",
-            temperature=0.1,
-            openai_api_key=openai_api_key
+        # OpenAI client setup with AIPipe
+        self.llm_client = AsyncOpenAI(
+            api_key=aipipe_token,
+            base_url=aipipe_base_url
         )
         
         # HTTP client
@@ -54,7 +53,7 @@ class UltimateQuizSolver:
         self.browser: Optional[Browser] = None
         self.playwright = None
         
-        logger.info("UltimateQuizSolver initialized")
+        logger.info(f"UltimateQuizSolver initialized with model: {model_name}")
     
     async def __aenter__(self):
         """Async context manager entry"""
@@ -154,20 +153,17 @@ class UltimateQuizSolver:
             'html': html_content
         }
     
-    def understand_task_with_langchain(self, quiz_info: Dict) -> Dict[str, Any]:
-        """Use LangChain to understand the quiz task"""
-        logger.info("Analyzing quiz task with LangChain")
+    async def understand_task_with_langchain(self, quiz_info: Dict) -> Dict[str, Any]:
+        """Use LLM to understand the quiz task"""
+        logger.info("Analyzing quiz task with LLM")
         
-        # Create prompt template
-        template = PromptTemplate(
-            input_variables=["quiz_text", "links"],
-            template="""You are an expert data analyst. Analyze this quiz task and extract key information.
+        prompt = f"""You are an expert data analyst. Analyze this quiz task and extract key information.
 
 Quiz Instructions:
-{quiz_text}
+{quiz_info['text']}
 
 Available Links:
-{links}
+{json.dumps(quiz_info['links'], indent=2)}
 
 Provide a detailed analysis in JSON format:
 {{
@@ -185,17 +181,20 @@ Provide a detailed analysis in JSON format:
 
 Be precise. Extract exact URLs and column names from the instructions.
 IMPORTANT: Respond with ONLY valid JSON, no other text."""
-        )
-        
-        # Create chain
-        chain = LLMChain(llm=self.llm, prompt=template)
         
         try:
-            # Run chain
-            result_text = chain.run(
-                quiz_text=quiz_info['text'],
-                links=json.dumps(quiz_info['links'], indent=2)
+            # Call OpenAI API via AIPipe
+            response = await self.llm_client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "You are an expert data analyst. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1000
             )
+            
+            result_text = response.choices[0].message.content
             
             # Clean and parse response
             result_text = re.sub(r'```json\n?', '', result_text)
@@ -283,7 +282,7 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
             # Cleanup temp file
             os.unlink(tmp_path)
     
-    def perform_analysis(self, df, table_name: str, task_info: Dict) -> Any:
+    async def perform_analysis(self, df, table_name: str, task_info: Dict) -> Any:
         """Perform the required analysis using DuckDB"""
         logger.info("Performing analysis")
         
@@ -333,33 +332,31 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
                 return result
             
             elif operation == 'visualize':
-                return self._create_visualization(df, task_info)
+                return await self._create_visualization(df, task_info)
             
             else:
                 # Use LLM for complex analysis
-                return self._llm_assisted_analysis(df, table_name, task_info)
+                return await self._llm_assisted_analysis(df, table_name, task_info)
         
         except Exception as e:
             logger.error(f"Error in analysis: {e}")
             # Fallback to LLM
-            return self._llm_assisted_analysis(df, table_name, task_info)
+            return await self._llm_assisted_analysis(df, table_name, task_info)
     
-    def _llm_assisted_analysis(self, df, table_name: str, task_info: Dict) -> Any:
+    async def _llm_assisted_analysis(self, df, table_name: str, task_info: Dict) -> Any:
         """Use LLM for complex analysis"""
         logger.info("Using LLM for complex analysis")
         
         # Create prompt
         sample = df.head(10).to_string()
         
-        template = PromptTemplate(
-            input_variables=["task", "operation", "columns", "dtypes", "shape", "sample"],
-            template="""Analyze this data and answer the question.
+        prompt = f"""Analyze this data and answer the question.
 
-Task: {task}
-Operation: {operation}
-Data columns: {columns}
-Data types: {dtypes}
-Data shape: {shape}
+Task: {task_info.get('task_summary')}
+Operation: {task_info.get('operation')}
+Data columns: {list(df.columns)}
+Data types: {df.dtypes.to_dict()}
+Data shape: {df.shape}
 
 Sample data:
 {sample}
@@ -373,19 +370,20 @@ Provide the answer in this JSON format:
 
 If SQL is not applicable, compute the answer directly.
 IMPORTANT: Respond with ONLY valid JSON."""
-        )
-        
-        chain = LLMChain(llm=self.llm, prompt=template)
         
         try:
-            result_text = chain.run(
-                task=task_info.get('task_summary'),
-                operation=task_info.get('operation'),
-                columns=str(list(df.columns)),
-                dtypes=str(df.dtypes.to_dict()),
-                shape=str(df.shape),
-                sample=sample
+            # Call OpenAI API via AIPipe
+            response = await self.llm_client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "You are a data analyst. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1000
             )
+            
+            result_text = response.choices[0].message.content
             
             # Clean and parse
             result_text = re.sub(r'```json\n?', '', result_text)
@@ -417,17 +415,15 @@ IMPORTANT: Respond with ONLY valid JSON."""
             logger.error(f"Error in LLM-assisted analysis: {e}")
             raise
     
-    def _create_visualization(self, df, task_info: Dict) -> str:
+    async def _create_visualization(self, df, task_info: Dict) -> str:
         """Create visualization based on task requirements"""
         logger.info("Creating visualization")
         
         # Use LLM to determine best visualization
-        template = PromptTemplate(
-            input_variables=["task", "columns"],
-            template="""Based on this task, what type of chart should be created?
+        prompt = f"""Based on this task, what type of chart should be created?
 
-Task: {task}
-Columns: {columns}
+Task: {task_info.get('task_summary')}
+Columns: {list(df.columns)}
 
 Choose from: bar_chart, line_chart, scatter_plot, pie_chart, histogram, heatmap
 
@@ -440,15 +436,20 @@ Respond with JSON:
 }}
 
 IMPORTANT: Respond with ONLY valid JSON."""
-        )
-        
-        chain = LLMChain(llm=self.llm, prompt=template)
         
         try:
-            result_text = chain.run(
-                task=task_info.get('task_summary'),
-                columns=str(list(df.columns))
+            # Call OpenAI API via AIPipe
+            response = await self.llm_client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "You are a data visualization expert. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=500
             )
+            
+            result_text = response.choices[0].message.content
             
             result_text = re.sub(r'```json\n?', '', result_text)
             result_text = re.sub(r'```\n?', '', result_text)
@@ -559,14 +560,14 @@ IMPORTANT: Respond with ONLY valid JSON."""
             # Step 2: Parse instructions
             quiz_info = self.parse_quiz_instructions(html_content)
             
-            # Step 3: Understand task with LangChain
-            task_info = self.understand_task_with_langchain(quiz_info)
+            # Step 3: Understand task with LLM
+            task_info = await self.understand_task_with_langchain(quiz_info)
             
             # Step 4: Download and process data
             df, table_name = await self.process_data(task_info)
             
             # Step 5: Perform analysis
-            answer = self.perform_analysis(df, table_name, task_info)
+            answer = await self.perform_analysis(df, table_name, task_info)
             
             # Step 6: Format answer
             formatted_answer = self.format_answer(
