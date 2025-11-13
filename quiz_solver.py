@@ -322,7 +322,7 @@ Available Links:
 Provide a detailed analysis in JSON format:
 {{
     "task_summary": "Brief description of what needs to be done",
-    "data_source_url": "URL of the data file to download (if any)",
+    "data_source_url": "URL of a DATA FILE (CSV, Excel, JSON, PDF, etc.) to download. Do NOT include the quiz page URL itself. Leave empty if no separate data file is mentioned.",
     "data_source_type": "pdf|csv|excel|json|html|image",
     "page_number": "specific page number if mentioned (for PDFs)",
     "target_column": "column name to analyze",
@@ -332,7 +332,11 @@ Provide a detailed analysis in JSON format:
 }}
 
 Be precise. Extract exact URLs and column names from the instructions.
-IMPORTANT: Respond with ONLY valid JSON, no other text."""
+IMPORTANT: 
+- Only set data_source_url if there's a SEPARATE data file mentioned (like a .csv, .xlsx, .json file link)
+- Do NOT set the quiz page URL as the data_source_url
+- If no data file is mentioned, leave data_source_url empty
+Respond with ONLY valid JSON, no other text."""
         
         try:
             # Log prompt size before sending
@@ -407,6 +411,11 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
         
         # Download data
         data_content = await self.download_data(data_url)
+        
+        # Check if downloaded content is HTML (not data)
+        if data_content.strip().startswith(b'<') or data_content.strip().startswith(b'<!DOCTYPE'):
+            logger.warning(f"Downloaded content from {data_url} appears to be HTML, not data. Skipping data processing.")
+            return None, None
         
         # Build kwargs for loading
         kwargs = {}
