@@ -2,6 +2,7 @@
 Enhanced Data Processor with DuckDB integration
 Handles data extraction, cleaning, normalization, and analysis
 """
+import os
 import duckdb
 import pandas as pd
 import numpy as np
@@ -141,11 +142,21 @@ class EnhancedDataProcessor:
         return tables
     
     def load_json(self, content_or_url):
-        """Load JSON data"""
+        """Load JSON data from file path, URL, or string content"""
         logger.info("Loading JSON")
         
-        if isinstance(content_or_url, str) and content_or_url.startswith('http'):
-            content = self.download_file(content_or_url)
+        if isinstance(content_or_url, str):
+            if content_or_url.startswith('http'):
+                # It's a URL - download it
+                content = self.download_file(content_or_url)
+            elif os.path.isfile(content_or_url):
+                # It's a file path - read it
+                logger.info(f"Reading JSON from file: {content_or_url}")
+                with open(content_or_url, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            else:
+                # It's already JSON content string
+                content = content_or_url
         else:
             content = content_or_url
         
