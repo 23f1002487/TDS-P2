@@ -209,6 +209,41 @@ class QuizSolver:
         
         return None
     
+    def _extract_file_extension(self, url: str, data_source_type: str) -> str:
+        """Extract file extension from URL or use data source type"""
+        # Valid file extensions
+        valid_extensions = {
+            'csv', 'xlsx', 'xls', 'json', 'pdf', 'parquet', 
+            'html', 'xml', 'tsv', 'txt', 'png', 'jpg', 'jpeg'
+        }
+        
+        # Try to get extension from URL
+        url_parts = url.split('/')[-1].split('?')[0]  # Get filename part without query params
+        if '.' in url_parts:
+            ext = url_parts.split('.')[-1].lower()
+            if ext in valid_extensions:
+                logger.info(f"Extracted file extension from URL: {ext}")
+                return ext
+        
+        # Fall back to data_source_type
+        if data_source_type and data_source_type != 'auto':
+            type_to_ext = {
+                'csv': 'csv',
+                'excel': 'xlsx',
+                'json': 'json',
+                'pdf': 'pdf',
+                'parquet': 'parquet',
+                'html': 'html',
+                'image': 'png'
+            }
+            ext = type_to_ext.get(data_source_type.lower(), 'dat')
+            logger.info(f"Using file extension from data_source_type: {ext}")
+            return ext
+        
+        # Default fallback
+        logger.warning(f"Could not determine file extension from URL: {url}, using 'dat'")
+        return 'dat'
+    
     def _detect_response_format(self, soup: BeautifulSoup, text: str) -> Optional[str]:
         """Detect expected response format from HTML and text"""
         format_hints = []
@@ -382,8 +417,10 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
             except:
                 pass
         
+        # Extract file extension safely
+        file_ext = self._extract_file_extension(data_url, task_info.get('data_source_type', 'auto'))
+        
         # Save to temporary file for processing
-        file_ext = data_url.split('.')[-1].lower()
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as tmp:
             tmp.write(data_content)
             tmp_path = tmp.name
