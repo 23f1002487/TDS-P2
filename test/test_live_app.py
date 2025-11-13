@@ -151,7 +151,7 @@ def test_sample_quiz_submission():
     sample_payload = {
         "email": "23f1002487@ds.study.iitm.ac.in",
         "secret": "this-is-agni",
-        "url": "https://example.com/quiz-834"
+        "url": "https://tds-llm-analysis.s-anand.net/demo"
     }
     
     try:
@@ -201,18 +201,104 @@ def test_sample_quiz_submission():
         return False
 
 
-def test_rate_limiting():
-    """Test rate limiting by making rapid requests"""
-    print_section("TEST 6: Rate Limiting")
+def test_invalid_json():
+    """Test POST /quiz with invalid JSON (should return 400)"""
+    print_section("TEST 6: Invalid JSON Handling (POST /quiz)")
     
-    print("Making 5 rapid requests to health endpoint...")
-    for i in range(5):
-        response = requests.get(f"{BASE_URL}/health")
-        print(f"Request {i+1}: Status {response.status_code}")
-        time.sleep(0.2)
+    all_passed = True
     
-    print("✅ Rate limiting test completed (check for 429 status if limit exceeded)")
-    return True
+    # Test 1: Completely invalid JSON
+    print("Test 6.1: Completely invalid JSON")
+    try:
+        response = requests.post(
+            f"{BASE_URL}/quiz",
+            data="this is not json at all",
+            headers={"Content-Type": "application/json"}
+        )
+        print(f"Status Code: {response.status_code}")
+        try:
+            print(f"Response: {json.dumps(response.json(), indent=2)}")
+        except:
+            print(f"Response: {response.text}")
+        
+        if response.status_code == 400:
+            print("✅ Invalid JSON test PASSED (got 400)")
+        else:
+            print(f"❌ Invalid JSON test FAILED (expected 400, got {response.status_code})")
+            all_passed = False
+    except Exception as e:
+        print(f"❌ Invalid JSON test FAILED with error: {e}")
+        all_passed = False
+    
+    # Test 2: Malformed JSON (missing closing brace)
+    print("\nTest 6.2: Malformed JSON (missing closing brace)")
+    try:
+        response = requests.post(
+            f"{BASE_URL}/quiz",
+            data='{"email": "test@example.com", "secret": "test"',
+            headers={"Content-Type": "application/json"}
+        )
+        print(f"Status Code: {response.status_code}")
+        try:
+            print(f"Response: {json.dumps(response.json(), indent=2)}")
+        except:
+            print(f"Response: {response.text}")
+        
+        if response.status_code == 400:
+            print("✅ Malformed JSON test PASSED (got 400)")
+        else:
+            print(f"❌ Malformed JSON test FAILED (expected 400, got {response.status_code})")
+            all_passed = False
+    except Exception as e:
+        print(f"❌ Malformed JSON test FAILED with error: {e}")
+        all_passed = False
+    
+    # Test 3: Invalid JSON with trailing comma
+    print("\nTest 6.3: Invalid JSON (trailing comma)")
+    try:
+        response = requests.post(
+            f"{BASE_URL}/quiz",
+            data='{"email": "test@example.com", "secret": "test",}',
+            headers={"Content-Type": "application/json"}
+        )
+        print(f"Status Code: {response.status_code}")
+        try:
+            print(f"Response: {json.dumps(response.json(), indent=2)}")
+        except:
+            print(f"Response: {response.text}")
+        
+        if response.status_code == 400:
+            print("✅ Trailing comma test PASSED (got 400)")
+        else:
+            print(f"❌ Trailing comma test FAILED (expected 400, got {response.status_code})")
+            all_passed = False
+    except Exception as e:
+        print(f"❌ Trailing comma test FAILED with error: {e}")
+        all_passed = False
+    
+    # Test 4: Valid JSON but missing fields (should be 422, not 400)
+    print("\nTest 6.4: Valid JSON with missing fields (should be 422, not 400)")
+    try:
+        response = requests.post(
+            f"{BASE_URL}/quiz",
+            json={"url": "https://example.com"},  # Missing email and secret
+            headers={"Content-Type": "application/json"}
+        )
+        print(f"Status Code: {response.status_code}")
+        try:
+            print(f"Response: {json.dumps(response.json(), indent=2)}")
+        except:
+            print(f"Response: {response.text}")
+        
+        if response.status_code == 422:
+            print("✅ Valid JSON validation test PASSED (got 422 for missing fields)")
+        else:
+            print(f"⚠️  Valid JSON validation test: expected 422, got {response.status_code}")
+            # Not marking as failed since we're just confirming 400 vs 422 distinction
+    except Exception as e:
+        print(f"⚠️  Valid JSON validation test error: {e}")
+    
+    return all_passed
 
 
 def main():
@@ -229,7 +315,7 @@ def main():
         "Docs Endpoint": test_docs_endpoint(),
         "Input Validation": test_quiz_endpoint_validation(),
         "Sample Quiz Test": test_sample_quiz_submission(),
-        "Rate Limiting": test_rate_limiting(),
+        "Invalid JSON (400)": test_invalid_json(),
     }
     
     # Summary

@@ -9,13 +9,15 @@ from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status, BackgroundTasks
+from fastapi import FastAPI, HTTPException, status, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, EmailStr, HttpUrl, Field, validator
 from pydantic_settings import BaseSettings
 from loguru import logger
 import httpx
+import json
 
 from quiz_solver import QuizSolver
 
@@ -166,6 +168,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Middleware to catch invalid JSON early
+@app.middleware("http")
+async def catch_json_errors(request: Request, call_next):
+    """Catch JSON decode errors and return 400"""
+    if request.method in ["POST", "PUT", "PATCH"] and "application/json" in request.headers.get("content-type", ""):
+        try:
+            # Try to read and parse the body
+            body = await request.body()
+            if body:
+                json.loads(body)
+            # Create a new request with the body since it was consumed
+            async def receive():
+                return {"type": "http.request", "body": body}
+            request._receive = receive
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON received on {request.url.path}: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Invalid JSON",
+                    "detail": f"Failed to decode JSON: {str(e)}",
+                    "message": "Request body must be valid JSON"
+                }
+            )
+        except Exception:
+            pass  # Let other errors be handled normally
+    
+    response = await call_next(request)
+    return response
+
 # endregion
 
 # region Pydantic Models
@@ -285,6 +318,7 @@ async def health_check():
 @app.post("/quiz", response_model=QuizResponse, tags=["Quiz"], 
           responses={
               200: {"description": "Quiz accepted for processing"},
+              400: {"description": "Invalid JSON format"},
               403: {"description": "Invalid credentials"},
               422: {"description": "Validation error"}
           })
@@ -349,15 +383,30 @@ async def handle_quiz(request: QuizRequest, background_tasks: BackgroundTasks):
 # ERROR HANDLERS
 # ============================================
 
-@app.exception_handler(422)
-async def validation_exception_handler(request, exc):
-    """Handle validation errors with detailed logging"""
-    logger.warning(f"Validation error: {exc}")
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors (422)"""
+    logger.warning(f"Validation error on {request.url.path}: {exc}")
     return JSONResponse(
         status_code=422,
         content={
             "error": "Validation error",
-            "detail": str(exc)
+            "detail": exc.errors(),
+            "body": str(exc.body) if hasattr(exc, 'body') else None
+        }
+    )
+
+
+@app.exception_handler(json.JSONDecodeError)
+async def json_decode_exception_handler(request: Request, exc: json.JSONDecodeError):
+    """Handle invalid JSON (400)"""
+    logger.warning(f"Invalid JSON on {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "Invalid JSON",
+            "detail": f"Failed to decode JSON: {str(exc)}",
+            "message": "Request body must be valid JSON"
         }
     )
 
