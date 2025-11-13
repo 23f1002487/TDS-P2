@@ -14,7 +14,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import httpx
 from playwright.async_api import async_playwright, Page, Browser
 from bs4 import BeautifulSoup
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError, APIError
 
 from data_processor import EnhancedDataProcessor
 from visualization import Visualizer
@@ -142,6 +142,12 @@ class QuizSolver:
             text = soup.get_text(separator='\n', strip=True)
             logger.info("Using full page text")
         
+        # Limit text size to prevent token overflow (max ~8000 chars = ~2000 tokens)
+        MAX_TEXT_SIZE = 8000
+        if len(text) > MAX_TEXT_SIZE:
+            logger.warning(f"Quiz text too large ({len(text)} chars), truncating to {MAX_TEXT_SIZE}")
+            text = text[:MAX_TEXT_SIZE] + "\n... [truncated]"
+        
         # Extract links
         links = {}
         for link in soup.find_all('a', href=True):
@@ -156,17 +162,29 @@ class QuizSolver:
             'html': html_content
         }
     
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        retry=retry_if_exception_type((RateLimitError, APIError, asyncio.TimeoutError)),
+        reraise=True
+    )
     async def understand_task_with_langchain(self, quiz_info: Dict) -> Dict[str, Any]:
         """Use LLM to understand the quiz task"""
         logger.info("Analyzing quiz task with LLM")
         
+        # Log the size of input data
+        quiz_text = quiz_info['text']
+        links_json = json.dumps(quiz_info['links'], indent=2)
+        logger.info(f"Quiz text length: {len(quiz_text)} chars")
+        logger.info(f"Links JSON length: {len(links_json)} chars")
+        
         prompt = f"""You are an expert data analyst. Analyze this quiz task and extract key information.
 
 Quiz Instructions:
-{quiz_info['text']}
+{quiz_text}
 
 Available Links:
-{json.dumps(quiz_info['links'], indent=2)}
+{links_json}
 
 Provide a detailed analysis in JSON format:
 {{
@@ -186,6 +204,9 @@ Be precise. Extract exact URLs and column names from the instructions.
 IMPORTANT: Respond with ONLY valid JSON, no other text."""
         
         try:
+            # Log prompt size before sending
+            logger.info(f"Sending prompt to LLM (total length: {len(prompt)} chars, ~{len(prompt)//4} tokens)")
+            
             # Call OpenAI API via AIPipe
             response = await self.llm_client.chat.completions.create(
                 model=self.model_name,
@@ -212,6 +233,12 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
             logger.error(f"Response was: {result_text}")
+            raise
+        except RateLimitError as e:
+            logger.warning(f"Rate limit error - will retry with exponential backoff: {e}")
+            raise
+        except APIError as e:
+            logger.error(f"OpenAI API error: {e}")
             raise
         except Exception as e:
             logger.error(f"Error in LangChain task understanding: {e}")
@@ -346,12 +373,26 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
             # Fallback to LLM
             return await self._llm_assisted_analysis(df, table_name, task_info)
     
-    async def _llm_assisted_analysis(self, df, table_name: str, task_info: Dict) -> Any:
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        retry=retry_if_exception_type((RateLimitError, APIError, asyncio.TimeoutError)),
+        reraise=True
+    )
+    async def _llm_assisted_analysis(self, df, task_info: Dict) -> Any:
         """Use LLM for complex analysis"""
         logger.info("Using LLM for complex analysis")
         
-        # Create prompt
+        # Create prompt with limited data sample
         sample = df.head(10).to_string()
+        logger.info(f"Data sample size: {len(sample)} chars")
+        logger.info(f"DataFrame shape: {df.shape}")
+        
+        # Limit sample size to prevent token overflow
+        MAX_SAMPLE_SIZE = 4000
+        if len(sample) > MAX_SAMPLE_SIZE:
+            logger.warning(f"Data sample too large ({len(sample)} chars), truncating to {MAX_SAMPLE_SIZE}")
+            sample = sample[:MAX_SAMPLE_SIZE] + "\n... [truncated]"
         
         prompt = f"""Analyze this data and answer the question.
 
@@ -375,6 +416,9 @@ If SQL is not applicable, compute the answer directly.
 IMPORTANT: Respond with ONLY valid JSON."""
         
         try:
+            # Log prompt size before sending
+            logger.info(f"Sending analysis prompt to LLM (total length: {len(prompt)} chars, ~{len(prompt)//4} tokens)")
+            
             # Call OpenAI API via AIPipe
             response = await self.llm_client.chat.completions.create(
                 model=self.model_name,
@@ -414,10 +458,22 @@ IMPORTANT: Respond with ONLY valid JSON."""
             logger.success(f"LLM analysis result: {answer}")
             return answer
             
+        except RateLimitError as e:
+            logger.warning(f"Rate limit error in LLM analysis - will retry with exponential backoff: {e}")
+            raise
+        except APIError as e:
+            logger.error(f"OpenAI API error in LLM analysis: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error in LLM-assisted analysis: {e}")
             raise
     
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        retry=retry_if_exception_type((RateLimitError, APIError, asyncio.TimeoutError)),
+        reraise=True
+    )
     async def _create_visualization(self, df, task_info: Dict) -> str:
         """Create visualization based on task requirements"""
         logger.info("Creating visualization")
@@ -441,6 +497,9 @@ Respond with JSON:
 IMPORTANT: Respond with ONLY valid JSON."""
         
         try:
+            # Log prompt size before sending
+            logger.info(f"Sending visualization prompt to LLM (total length: {len(prompt)} chars, ~{len(prompt)//4} tokens)")
+            
             # Call OpenAI API via AIPipe
             response = await self.llm_client.chat.completions.create(
                 model=self.model_name,
@@ -479,6 +538,12 @@ IMPORTANT: Respond with ONLY valid JSON."""
             logger.success("Visualization created")
             return result
         
+        except RateLimitError as e:
+            logger.warning(f"Rate limit error in visualization - will retry with exponential backoff: {e}")
+            raise
+        except APIError as e:
+            logger.error(f"OpenAI API error in visualization: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error creating visualization: {e}")
             raise

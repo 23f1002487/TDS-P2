@@ -29,8 +29,8 @@ QUIZ_URL = "http://localhost:8000/demo"  # Local mock makeup quiz (3 questions)
 # ============================================
 # CREDENTIALS
 # ============================================
-EMAIL = "your-email@ds.study.iitm.ac.in"  # Update with your email
-SECRET = "your-secret-string"  # Update with your secret
+EMAIL = "23f1002487@ds.study.iitm.ac.in"  # Default credentials for testing
+SECRET = "this-is-agni"  # Default credentials for testing
 
 
 def print_section(title):
@@ -143,67 +143,9 @@ def test_quiz_endpoint_validation():
     return True
 
 
-def test_quiz_submission():
-    """Test POST /quiz with valid data"""
-    print_section("TEST 5: Quiz Submission (POST /quiz)")
-    
-    # Check if credentials are set
-    if EMAIL == "your-email@ds.study.iitm.ac.in":
-        print("⚠️  WARNING: Using default email. Update EMAIL and SECRET in the script")
-        print("   Attempting to test with mock server anyway...\n")
-    
-    try:
-        print(f"Submitting quiz: {QUIZ_URL}")
-        print(f"Using email: {EMAIL}")
-        print(f"Target server: {BASE_URL}\n")
-        
-        payload = {
-            "email": EMAIL,
-            "secret": SECRET,
-            "url": QUIZ_URL
-        }
-        
-        print("Sending POST request...")
-        response = requests.post(f"{BASE_URL}/quiz", json=payload, timeout=30)
-        print(f"Status Code: {response.status_code}")
-        
-        try:
-            response_data = response.json()
-            print(f"Response: {json.dumps(response_data, indent=2)}")
-        except:
-            print(f"Response Text: {response.text}")
-        
-        if response.status_code == 202:
-            print("\n✅ Quiz submission ACCEPTED (processing in background)")
-            if isinstance(response_data, dict):
-                print(f"   Request ID: {response_data.get('request_id', 'N/A')}")
-                print(f"   Status: {response_data.get('status', 'N/A')}")
-            return True
-        elif response.status_code == 200:
-            print("\n✅ Quiz submission SUCCESSFUL")
-            return True
-        elif response.status_code == 403:
-            print("\n❌ Authentication failed - check EMAIL and SECRET")
-            return False
-        else:
-            print(f"\n⚠️  Unexpected status code: {response.status_code}")
-            return False
-            
-    except requests.exceptions.ConnectionError as e:
-        print(f"❌ Connection error: Cannot reach {BASE_URL}")
-        print("   Make sure your app server is running!")
-        return False
-    except requests.exceptions.Timeout:
-        print(f"❌ Request timeout after 30 seconds")
-        return False
-    except Exception as e:
-        print(f"❌ Quiz submission test FAILED: {e}")
-        return False
-
-
 def test_sample_quiz_submission():
     """Test POST /quiz with specific sample data"""
-    print_section("TEST 6: Sample Quiz Submission (POST /quiz)")
+    print_section("TEST 5: Sample Quiz Submission (POST /quiz)")
     
     # Sample data for testing
     sample_payload = {
@@ -261,7 +203,7 @@ def test_sample_quiz_submission():
 
 def test_rate_limiting():
     """Test rate limiting by making rapid requests"""
-    print_section("TEST 7: Rate Limiting")
+    print_section("TEST 6: Rate Limiting")
     
     print("Making 5 rapid requests to health endpoint...")
     for i in range(5):
@@ -286,7 +228,6 @@ def main():
         "Health Endpoint": test_health_endpoint(),
         "Docs Endpoint": test_docs_endpoint(),
         "Input Validation": test_quiz_endpoint_validation(),
-        "Quiz Submission": test_quiz_submission(),
         "Sample Quiz Test": test_sample_quiz_submission(),
         "Rate Limiting": test_rate_limiting(),
     }
