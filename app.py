@@ -1,5 +1,5 @@
 """
-LLM Analysis Quiz API Server - PRODUCTION READY
+LLM Analysis Quiz API Server
 FastAPI application with proper background tasks, validation, and error handling
 """
 import os
@@ -17,9 +17,10 @@ from pydantic_settings import BaseSettings
 from loguru import logger
 import httpx
 
-from quiz_solver import UltimateQuizSolver
+from quiz_solver import QuizSolver
 
 
+# region Configuration
 # ============================================
 # CONFIGURATION WITH VALIDATION
 # ============================================
@@ -32,7 +33,6 @@ class Settings(BaseSettings):
     aipipe_base_url: str = Field(default="https://aipipe.org/openai/v1", description="AIPipe base URL")
     openai_model: str = Field(default="gpt-4o-mini", description="Model name (without provider prefix)")
     port: int = Field(default=7860, ge=1, le=65535)
-    max_concurrent_quizzes: int = Field(default=3, ge=1, le=10)
     
     class Config:
         env_file = ".env"
@@ -56,7 +56,9 @@ except Exception as e:
     logger.error("Please set required environment variables: STUDENT_EMAIL, STUDENT_SECRET, AIPIPE_TOKEN")
     sys.exit(1)
 
+# endregion
 
+# region Logging
 # ============================================
 # CONFIGURE LOGGING
 # ============================================
@@ -76,7 +78,7 @@ logger.add(
     colorize=True
 )
 
-# Add file logger with rotation
+# Add file logger with rotation (Developement or local development Only)
 logger.add(
     "logs/app_{time:YYYY-MM-DD}.log",
     rotation="500 MB",
@@ -98,66 +100,9 @@ logger.add(
 
 logger.info("✓ Logging configured (logs directory ensured)")
 
+# endregion
 
-# ============================================
-# RATE LIMITING
-# ============================================
-
-from collections import defaultdict
-from time import time
-
-class RateLimiter:
-    """Simple in-memory rate limiter"""
-    def __init__(self, requests_per_minute: int = 10):
-        self.requests_per_minute = requests_per_minute
-        self.requests = defaultdict(list)
-    
-    def is_allowed(self, key: str) -> bool:
-        """Check if request is allowed"""
-        now = time()
-        minute_ago = now - 60
-        
-        # Clean old requests
-        self.requests[key] = [req_time for req_time in self.requests[key] if req_time > minute_ago]
-        
-        # Check limit
-        if len(self.requests[key]) >= self.requests_per_minute:
-            return False
-        
-        # Add new request
-        self.requests[key].append(now)
-        return True
-
-rate_limiter = RateLimiter(requests_per_minute=10)
-
-
-# ============================================
-# QUIZ SOLVER POOL
-# ============================================
-
-class QuizSolverPool:
-    """Manage concurrent quiz solvers with limit"""
-    def __init__(self, max_concurrent: int):
-        self.max_concurrent = max_concurrent
-        self.active_count = 0
-        self.lock = asyncio.Lock()
-    
-    async def acquire(self) -> bool:
-        """Try to acquire a slot"""
-        async with self.lock:
-            if self.active_count >= self.max_concurrent:
-                return False
-            self.active_count += 1
-            return True
-    
-    async def release(self):
-        """Release a slot"""
-        async with self.lock:
-            self.active_count -= 1
-
-solver_pool = QuizSolverPool(max_concurrent=settings.max_concurrent_quizzes)
-
-
+# region Lifespan Management
 # ============================================
 # LIFESPAN MANAGEMENT
 # ============================================
@@ -188,9 +133,10 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Application shutting down")
-    logger.info(f"Active quiz solvers: {solver_pool.active_count}")
 
+# endregion
 
+# region FastAPI App
 # ============================================
 # FASTAPI APP
 # ============================================
@@ -207,13 +153,15 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# endregion
 
+# region Pydantic Models
 # ============================================
 # PYDANTIC MODELS
 # ============================================
@@ -223,20 +171,12 @@ class QuizRequest(BaseModel):
     secret: str = Field(..., min_length=1, description="Secret authentication string")
     url: HttpUrl = Field(..., description="Quiz URL to solve")
     
-    @validator('url')
-    def validate_url(cls, v):
-        """Validate URL is safe"""
-        url_str = str(v)
-        # Block dangerous schemes
-        if url_str.startswith(('file://', 'javascript:', 'data:')):
-            raise ValueError("Invalid URL scheme")
-        return v
-    
     class Config:
+        extra = "ignore"  # Ignore unknown fields instead of raising validation error
         json_schema_extra = {
             "example": {
-                "email": "23f1002487@ds.study.iitm.ac.in",
-                "secret": "this-is-agni",
+                "email": "my_id@ds.study.iitm.ac.in",
+                "secret": "this-is-secret",
                 "url": "https://example.com/quiz-123"
             }
         }
@@ -254,7 +194,9 @@ class HealthResponse(BaseModel):
     timestamp: str
     components: dict
 
+# endregion
 
+# region Background Task
 # ============================================
 # BACKGROUND TASK
 # ============================================
@@ -265,7 +207,7 @@ async def solve_quiz_background(quiz_url: str, request_id: str):
     
     try:
         # Create solver instance for this request
-        async with UltimateQuizSolver(
+        async with QuizSolver(
             email=settings.student_email,
             secret=settings.student_secret,
             aipipe_token=settings.aipipe_token,
@@ -284,11 +226,11 @@ async def solve_quiz_background(quiz_url: str, request_id: str):
     except Exception as e:
         logger.exception(f"[{request_id}] ✗ Quiz solving failed: {e}")
     finally:
-        # Release solver slot
-        await solver_pool.release()
-        logger.info(f"[{request_id}] Released solver slot, active: {solver_pool.active_count}")
+        logger.info(f"[{request_id}] Quiz solving completed")
 
+# endregion
 
+# region API Endpoints
 # ============================================
 # API ENDPOINTS
 # ============================================
@@ -314,9 +256,7 @@ async def health_check():
     """Deep health check with component validation"""
     components = {
         "api": "healthy",
-        "config": "healthy",
-        "rate_limiter": "healthy",
-        "solver_pool": f"{solver_pool.active_count}/{solver_pool.max_concurrent}"
+        "config": "healthy"
     }
     
     # Check AIPipe configuration (actual validation happens during API calls)
@@ -339,9 +279,7 @@ async def health_check():
           responses={
               200: {"description": "Quiz accepted for processing"},
               403: {"description": "Invalid credentials"},
-              422: {"description": "Validation error"},
-              429: {"description": "Rate limit exceeded"},
-              503: {"description": "Service busy"}
+              422: {"description": "Validation error"}
           })
 async def handle_quiz(request: QuizRequest, background_tasks: BackgroundTasks):
     """
@@ -351,7 +289,6 @@ async def handle_quiz(request: QuizRequest, background_tasks: BackgroundTasks):
     - Non-daemon threads (won't be killed on shutdown)
     - Proper error tracking
     - Resource management
-    - Concurrent request limiting
     """
     # Generate request ID for tracking
     request_id = f"quiz-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{id(request)}"
@@ -375,26 +312,9 @@ async def handle_quiz(request: QuizRequest, background_tasks: BackgroundTasks):
                 detail="Invalid email"
             )
         
-        # Rate limiting
-        client_key = f"{request.email}:{request.secret}"
-        if not rate_limiter.is_allowed(client_key):
-            logger.warning(f"[{request_id}] Rate limit exceeded")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded. Max 10 requests per minute."
-            )
-        
-        # Check solver pool capacity
-        if not await solver_pool.acquire():
-            logger.warning(f"[{request_id}] Service busy, max concurrent quizzes reached")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Service busy. Maximum {settings.max_concurrent_quizzes} concurrent quizzes allowed."
-            )
-        
         quiz_url = str(request.url)
         
-        # Add to background tasks (PROPER WAY - not daemon threads!)
+        # Add to background tasks
         background_tasks.add_task(solve_quiz_background, quiz_url, request_id)
         
         logger.success(f"[{request_id}] Quiz task accepted and queued")
@@ -407,20 +327,17 @@ async def handle_quiz(request: QuizRequest, background_tasks: BackgroundTasks):
         )
         
     except HTTPException:
-        # Release slot if we acquired it
-        if solver_pool.active_count > 0:
-            await solver_pool.release()
         raise
     except Exception as e:
         logger.exception(f"[{request_id}] Error handling quiz: {e}")
-        if solver_pool.active_count > 0:
-            await solver_pool.release()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
 
+# endregion
 
+# region Error Handlers
 # ============================================
 # ERROR HANDLERS
 # ============================================
@@ -450,7 +367,9 @@ async def global_exception_handler(request, exc):
         }
     )
 
+# endregion
 
+# region Startup
 # ============================================
 # STARTUP
 # ============================================
@@ -460,7 +379,6 @@ if __name__ == '__main__':
     
     logger.info(f"Starting server on port {settings.port}")
     logger.info(f"Student email: {settings.student_email}")
-    logger.info(f"Max concurrent quizzes: {settings.max_concurrent_quizzes}")
     
     uvicorn.run(
         app,
@@ -468,3 +386,5 @@ if __name__ == '__main__':
         port=settings.port,
         log_config=None  # Use loguru instead
     )
+
+# endregion

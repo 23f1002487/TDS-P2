@@ -2,6 +2,8 @@
 Ultimate Enhanced Quiz Solver
 With Playwright, OpenAI (via AIPipe), Tenacity, and Loguru
 """
+# region Imports
+
 import asyncio
 import json
 import re
@@ -17,8 +19,9 @@ from openai import AsyncOpenAI
 from data_processor import EnhancedDataProcessor
 from visualization import Visualizer
 
+# endregion
 
-class UltimateQuizSolver:
+class QuizSolver:
     """
     Production-grade quiz solver with:
     - Playwright for reliable JS rendering
@@ -53,7 +56,7 @@ class UltimateQuizSolver:
         self.browser: Optional[Browser] = None
         self.playwright = None
         
-        logger.info(f"UltimateQuizSolver initialized with model: {model_name}")
+        logger.info(f"QuizSolver initialized with model: {model_name}")
     
     async def __aenter__(self):
         """Async context manager entry"""
@@ -575,8 +578,9 @@ IMPORTANT: Respond with ONLY valid JSON."""
                 task_info.get('expected_answer_type', 'string')
             )
             
-            # Step 7: Submit answer
-            submit_url = task_info.get('submit_url')
+            # Step 7: Submit answer to fixed endpoint
+            submit_url = "https://example.com/submit"
+            logger.info(f"Using fixed submit URL: {submit_url}")
             result = await self.submit_answer(submit_url, quiz_url, formatted_answer)
             
             logger.success(f"Quiz result: {result}")

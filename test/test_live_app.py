@@ -201,9 +201,67 @@ def test_quiz_submission():
         return False
 
 
+def test_sample_quiz_submission():
+    """Test POST /quiz with specific sample data"""
+    print_section("TEST 6: Sample Quiz Submission (POST /quiz)")
+    
+    # Sample data for testing
+    sample_payload = {
+        "email": "23f1002487@ds.study.iitm.ac.in",
+        "secret": "this-is-agni",
+        "url": "https://example.com/quiz-834"
+    }
+    
+    try:
+        print(f"Submitting sample quiz data:")
+        print(f"  Email: {sample_payload['email']}")
+        print(f"  URL: {sample_payload['url']}")
+        print(f"  Target server: {BASE_URL}\n")
+        
+        print("Sending POST request...")
+        response = requests.post(f"{BASE_URL}/quiz", json=sample_payload, timeout=30)
+        print(f"Status Code: {response.status_code}")
+        
+        try:
+            response_data = response.json()
+            print(f"Response: {json.dumps(response_data, indent=2)}")
+        except:
+            print(f"Response Text: {response.text}")
+        
+        if response.status_code == 202:
+            print("\n✅ Sample quiz submission ACCEPTED (processing in background)")
+            if isinstance(response_data, dict):
+                print(f"   Request ID: {response_data.get('request_id', 'N/A')}")
+                print(f"   Status: {response_data.get('status', 'N/A')}")
+            return True
+        elif response.status_code == 200:
+            print("\n✅ Sample quiz submission SUCCESSFUL")
+            return True
+        elif response.status_code == 403:
+            print("\n❌ Authentication failed - check credentials")
+            return False
+        elif response.status_code == 422:
+            print("\n⚠️  Validation error - check the URL or payload format")
+            return False
+        else:
+            print(f"\n⚠️  Unexpected status code: {response.status_code}")
+            return False
+            
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ Connection error: Cannot reach {BASE_URL}")
+        print("   Make sure your app server is running!")
+        return False
+    except requests.exceptions.Timeout:
+        print(f"❌ Request timeout after 30 seconds")
+        return False
+    except Exception as e:
+        print(f"❌ Sample quiz submission test FAILED: {e}")
+        return False
+
+
 def test_rate_limiting():
     """Test rate limiting by making rapid requests"""
-    print_section("TEST 6: Rate Limiting")
+    print_section("TEST 7: Rate Limiting")
     
     print("Making 5 rapid requests to health endpoint...")
     for i in range(5):
@@ -229,6 +287,7 @@ def main():
         "Docs Endpoint": test_docs_endpoint(),
         "Input Validation": test_quiz_endpoint_validation(),
         "Quiz Submission": test_quiz_submission(),
+        "Sample Quiz Test": test_sample_quiz_submission(),
         "Rate Limiting": test_rate_limiting(),
     }
     
