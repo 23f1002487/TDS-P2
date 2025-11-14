@@ -715,16 +715,17 @@ IMPORTANT: Respond with ONLY valid JSON."""
         current_url = initial_url
         quiz_count = 0
         max_quizzes = 20
-        max_retries = 1
+        max_retries_per_quiz = 3  # Allow up to 3 attempts per quiz
         
         try:
             while current_url and quiz_count < max_quizzes:
                 quiz_count += 1
-                elapsed = time.time() - start_time
+                quiz_start_time = time.time()
+                elapsed = quiz_start_time - start_time
                 
                 # Check 3-minute timeout
                 if elapsed > 175:
-                    logger.warning("Approaching timeout limit")
+                    logger.warning("Approaching 3-minute timeout limit, stopping")
                     break
                 
                 logger.info(f"\n{'#'*60}")
@@ -733,33 +734,64 @@ IMPORTANT: Respond with ONLY valid JSON."""
                 logger.info(f"Elapsed: {elapsed:.1f}s / 180s")
                 logger.info(f"{'#'*60}\n")
                 
-                # Try solving with retries
-                for attempt in range(max_retries):
+                # Try solving with retries (only if within time limit)
+                quiz_solved = False
+                for attempt in range(max_retries_per_quiz):
+                    # Check if we still have time (within 3 minutes from start)
+                    current_elapsed = time.time() - start_time
+                    if current_elapsed > 175:
+                        logger.warning("Time limit reached, cannot retry")
+                        break
+                    
                     try:
                         result = await self.solve_single_quiz(current_url)
                         
-                        if result.get('correct'):
+                        # Check the response fields
+                        is_correct = result.get('correct', False)
+                        reason = result.get('reason', '')
+                        next_url = result.get('url', '')
+                        
+                        if is_correct:
                             logger.success(f"✓ Quiz #{quiz_count} CORRECT!")
-                            current_url = result.get('url')
+                            if reason:
+                                logger.info(f"Success reason: {reason}")
+                            current_url = next_url
+                            quiz_solved = True
                             break
                         else:
-                            reason = result.get('reason', 'Unknown error')
-                            logger.warning(f"✗ Quiz #{quiz_count} INCORRECT: {reason}")
+                            logger.warning(f"✗ Quiz #{quiz_count} INCORRECT (attempt {attempt + 1}/{max_retries_per_quiz})")
+                            logger.warning(f"Reason: {reason}")
                             
-                            if attempt < max_retries - 1:
-                                logger.info(f"Retrying (attempt {attempt + 2}/{max_retries})...")
-                                continue
-                            else:
-                                logger.info("Max retries reached, moving to next quiz")
-                                current_url = result.get('url')
-                                break
+                            # Check if we should retry based on time limit
+                            time_since_quiz_start = time.time() - quiz_start_time
+                            if time_since_quiz_start < 170:  # Allow retry if quiz started less than 170s ago
+                                if attempt < max_retries_per_quiz - 1:
+                                    logger.info(f"Retrying quiz (time since quiz start: {time_since_quiz_start:.1f}s)...")
+                                    await asyncio.sleep(1)  # Brief pause before retry
+                                    continue
+                            
+                            # If we can't retry or last attempt, move to next quiz URL if provided
+                            if next_url:
+                                logger.info(f"Moving to next quiz URL: {next_url}")
+                                current_url = next_url
+                            break
                     
                     except Exception as e:
-                        logger.exception(f"Attempt {attempt + 1} failed: {e}")
-                        if attempt == max_retries - 1:
-                            logger.error("Max retries reached, stopping")
+                        logger.exception(f"Attempt {attempt + 1} failed with exception: {e}")
+                        
+                        # Check if we should retry based on time
+                        current_elapsed = time.time() - start_time
+                        if current_elapsed > 175 or attempt == max_retries_per_quiz - 1:
+                            logger.error("Cannot retry - time limit or max attempts reached")
                             return
-                        await asyncio.sleep(1)
+                        
+                        logger.info("Retrying after exception...")
+                        await asyncio.sleep(2)
+                
+                # If quiz wasn't solved and no next URL, stop
+                if not quiz_solved and not current_url:
+                    logger.warning("No more quizzes to solve")
+                    break
             
             total_time = time.time() - start_time
             logger.info(f"\n{'='*60}")
