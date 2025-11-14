@@ -436,6 +436,67 @@ IMPORTANT: Respond with ONLY valid JSON."""
             logger.error(f"Error in LLM-assisted analysis: {e}")
             raise
     
+    async def _answer_direct_question(self, quiz_info: Dict, task_info: Dict) -> Any:
+        """Answer a direct question without data analysis using LLM"""
+        logger.info("Answering direct question with LLM")
+        
+        prompt = f"""You are answering a quiz question. Read the question carefully and provide the answer.
+
+Quiz Content:
+{quiz_info['text'][:2000]}
+
+Task Summary: {task_info.get('task_summary')}
+Operation: {task_info.get('operation')}
+Additional Instructions: {task_info.get('additional_instructions', '')}
+
+Analyze the question and provide a direct answer. If the question is:
+- A math problem: calculate and return the numeric answer
+- A factual question: return the factual answer
+- A multiple choice: return the correct option
+- Asking for specific information from the page: extract and return it
+
+Respond with ONLY the answer value itself (number, string, etc.), without any explanation or extra text.
+Examples:
+- If answer is a number: 42
+- If answer is text: "Paris"
+- If answer is a list: ["item1", "item2"]
+
+Your answer:"""
+        
+        try:
+            response = await self.llm_client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that answers questions concisely. Provide only the answer without explanation."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=500
+            )
+            
+            answer = response.choices[0].message.content.strip()
+            
+            # Try to parse as JSON if it looks like JSON
+            if answer.startswith('{') or answer.startswith('['):
+                try:
+                    answer = json.loads(answer)
+                except:
+                    pass
+            
+            # Try to convert to number if it looks like a number
+            elif answer.replace('.', '', 1).replace('-', '', 1).isdigit():
+                try:
+                    answer = float(answer) if '.' in answer else int(answer)
+                except:
+                    pass
+            
+            logger.success(f"Direct question answer: {answer}")
+            return answer
+            
+        except Exception as e:
+            logger.error(f"Error answering direct question: {e}")
+            raise
+    
     async def _create_visualization(self, df, task_info: Dict) -> str:
         """Create visualization based on task requirements"""
         logger.info("Creating visualization")
@@ -584,11 +645,18 @@ IMPORTANT: Respond with ONLY valid JSON."""
             # Step 3: Understand task with LLM
             task_info = await self.understand_task_with_langchain(quiz_info)
             
-            # Step 4: Download and process data
+            # Step 4: Download and process data (if data source exists)
             df, table_name = await self.process_data(task_info)
             
             # Step 5: Perform analysis
-            answer = await self.perform_analysis(df, table_name, task_info)
+            if df is not None and table_name is not None:
+                # Data-based question: analyze the data
+                logger.info("Data available - performing data analysis")
+                answer = await self.perform_analysis(df, table_name, task_info)
+            else:
+                # Direct question without data: ask LLM directly
+                logger.info("No data available - answering question directly with LLM")
+                answer = await self._answer_direct_question(quiz_info, task_info)
             
             # Step 6: Format answer
             formatted_answer = self.format_answer(
