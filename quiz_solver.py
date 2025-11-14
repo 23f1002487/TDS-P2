@@ -446,42 +446,39 @@ IMPORTANT: Respond with ONLY valid JSON."""
         """Answer a direct question without data analysis using LLM"""
         logger.info("Answering direct question with LLM")
         
-        # Check if this is a meta-submission task (just testing submission format)
-        operation = task_info.get('operation', '').lower()
-        quiz_text_lower = quiz_info['text'].lower()
-        task_summary_lower = task_info.get('task_summary', '').lower()
-        
-        # Only treat as meta-submission if explicitly about format AND has "anything" phrase
-        # Don't confuse with scraping or extraction tasks
-        is_scraping = any(word in task_summary_lower for word in ['scrape', 'extract', 'find', 'get', 'read'])
-        
-        if operation == 'meta_submission' and not is_scraping:
-            if 'anything you want' in quiz_text_lower or 'any value' in quiz_text_lower:
-                logger.info("Detected meta-submission task - answer can be any value")
-                return "test"  # Simple placeholder value
-        
-        prompt = f"""You are answering a quiz question. Read the question carefully and provide the answer.
+        prompt = f"""You are answering a quiz question. Read the page content carefully and extract or compute the answer.
 
-Quiz Content:
-{quiz_info['text'][:2000]}
+Quiz Page Content:
+{quiz_info['text'][:3000]}
 
-Task Summary: {task_info.get('task_summary')}
+Task: {task_info.get('task_summary')}
 Operation: {task_info.get('operation')}
 Additional Instructions: {task_info.get('additional_instructions', '')}
 
-Analyze the question and provide a direct answer. If the question is:
-- A meta-task asking to submit JSON with "anything you want" or "any value": return a simple placeholder like "test"
-- A math problem: calculate and return the numeric answer
-- A factual question: return the factual answer
-- A multiple choice: return the correct option
-- Asking for specific information from the page: extract and return it
+INSTRUCTIONS:
+1. If the quiz asks you to "scrape" or "extract" information (like a secret code, password, or specific text):
+   - Look for that information in the Quiz Page Content above
+   - Extract the EXACT value shown on the page
+   - Do NOT make up or generate placeholder values
 
-Respond with ONLY the answer value itself (number, string, etc.), without any explanation or extra text.
+2. If the quiz says you can provide "anything you want" or "any value":
+   - You can provide any reasonable value like "test", "hello", or 42
+
+3. If it's a calculation or data analysis question:
+   - Perform the calculation based on information in the page
+   - Return the computed result
+
+4. If it's asking for information shown on the page:
+   - Read and extract that specific information
+   - Return it exactly as shown
+
+Respond with ONLY the answer value itself (no explanations, no markdown, no quotes unless the answer itself contains quotes).
+
 Examples:
-- If answer is a number: 42
-- If answer is text: "Paris"
-- If answer can be anything: "test"
-- If answer is a list: ["item1", "item2"]
+- If a secret code "ABC123" is shown: ABC123
+- If asked to provide any value: test
+- If calculating 2+2: 4
+- If extracting a name "John Smith": John Smith
 
 Your answer:"""
         
