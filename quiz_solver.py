@@ -272,7 +272,7 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
             logger.error(f"Error downloading data: {e}")
             raise
     
-    async def process_data(self, task_info: Dict) -> tuple:
+    async def process_data(self, task_info: Dict, quiz_url: str = None) -> tuple:
         """Download and process data based on task information"""
         logger.info("Processing data")
         
@@ -280,6 +280,16 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
         if not data_url:
             logger.warning("No data source URL found")
             return None, None
+        
+        # Handle relative data URLs (like submit URLs)
+        if not data_url.startswith('http://') and not data_url.startswith('https://'):
+            if quiz_url:
+                from urllib.parse import urlparse, urljoin
+                # Use urljoin to properly handle both absolute and relative paths
+                data_url = urljoin(quiz_url, data_url)
+                logger.info(f"Converted relative data URL to: {data_url}")
+            else:
+                logger.warning(f"Data URL appears relative but no quiz_url provided: {data_url}")
         
         # Download data
         data_content = await self.download_data(data_url)
@@ -529,10 +539,13 @@ IMPORTANT: Respond with ONLY valid JSON."""
             instructions.append("✓ This quiz allows you to provide ANY value you want.")
             instructions.append("→ Simply respond with a value like: test")
         elif is_scraping_task and has_elements:
-            instructions.append("✓ This is a SCRAPING task - extract information from the page.")
-            instructions.append(f"→ Check the 'RENDERED HTML ELEMENTS' section - there are {len(elements_with_ids)} element(s) with IDs.")
+            instructions.append("✓ This is a SCRAPING task - extract information from the RENDERED page.")
+            instructions.append(f"→ PRIORITY: Check 'RENDERED HTML ELEMENTS' section FIRST - there are {len(elements_with_ids)} element(s).")
             instructions.append(f"→ Available element IDs: {', '.join(elements_with_ids.keys())}")
-            instructions.append("→ Extract the EXACT text content from the relevant element.")
+            instructions.append("→ The content in these elements is what JavaScript generated/rendered on the page.")
+            instructions.append("→ Extract the EXACT text from the relevant element (NOT from JavaScript code).")
+            if has_scripts:
+                instructions.append("→ Ignore base64 or raw code in JavaScript - use the DECODED content in elements.")
         elif is_scraping_task and has_scripts:
             instructions.append("✓ This is a SCRAPING task with JavaScript.")
             instructions.append("→ Check the 'JAVASCRIPT CODE' section for values that might be base64 encoded or hardcoded.")
@@ -756,7 +769,7 @@ IMPORTANT: Respond with ONLY valid JSON."""
             task_info = await self.understand_task_with_langchain(quiz_info)
             
             # Step 4: Download and process data (if data source exists)
-            df, table_name = await self.process_data(task_info)
+            df, table_name = await self.process_data(task_info, quiz_url)
             
             # Step 5: Perform analysis
             if df is not None and table_name is not None:
