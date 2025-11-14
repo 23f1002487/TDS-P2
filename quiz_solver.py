@@ -159,6 +159,12 @@ class QuizSolver:
         
         logger.info(f"Extracted {len(elements_with_ids)} elements with IDs")
         
+        # Log the elements for debugging
+        if elements_with_ids:
+            logger.debug("Elements with IDs found:")
+            for elem_id, elem_text in elements_with_ids.items():
+                logger.debug(f"  - #{elem_id}: {elem_text[:100]}")
+        
         return {
             'text': text,
             'links': links,
@@ -467,26 +473,35 @@ IMPORTANT: Respond with ONLY valid JSON."""
         # Build comprehensive context
         elements_info = "\n".join([f"- Element #{elem_id}: {elem_text[:200]}" for elem_id, elem_text in elements_with_ids.items()])
         
+        # Log what we're sending to LLM for debugging
+        logger.debug(f"Page text length: {len(page_text)} chars")
+        logger.debug(f"Elements with IDs: {len(elements_with_ids)}")
+        if elements_with_ids:
+            logger.info(f"Available elements: {list(elements_with_ids.keys())}")
+        
         prompt = f"""You are answering a quiz question. Read the page content carefully and extract or compute the answer.
 
 Quiz Page Content (Text):
 {page_text}
 
-HTML Elements with IDs (may contain secrets/codes):
+HTML Elements with IDs (these are important - secrets/codes are often in these):
 {elements_info if elements_info else "No specific elements found"}
 
 Task: {task_info.get('task_summary')}
 Operation: {task_info.get('operation')}
 Additional Instructions: {task_info.get('additional_instructions', '')}
 
-INSTRUCTIONS:
-1. If the quiz asks you to "scrape" or "extract" information (like a secret code, password, or specific text):
-   - Look for that information in the Quiz Page Content above
-   - Extract the EXACT value shown on the page
-   - Do NOT make up or generate placeholder values
+CRITICAL INSTRUCTIONS:
+1. If the quiz asks you to "scrape" or "extract" a SECRET CODE, PASSWORD, or SPECIFIC TEXT:
+   - FIRST: Check the "HTML Elements with IDs" section above - secrets are usually there
+   - Look for elements with IDs like: "secret", "code", "password", "answer", "result"
+   - Extract the EXACT value shown in that element
+   - If not found in elements, search in the page text
+   - NEVER respond with "the secret code you scraped" or similar - give the ACTUAL VALUE
+   - If you truly cannot find it, say "NOT_FOUND" (but try hard to find it first!)
 
 2. If the quiz says you can provide "anything you want" or "any value":
-   - You can provide any reasonable value like "test", "hello", or 42
+   - Provide any simple value like "test", "hello", or 42
 
 3. If it's a calculation or data analysis question:
    - Perform the calculation based on information in the page
@@ -496,13 +511,18 @@ INSTRUCTIONS:
    - Read and extract that specific information
    - Return it exactly as shown
 
-Respond with ONLY the answer value itself (no explanations, no markdown, no quotes unless the answer itself contains quotes).
+Respond with ONLY the answer value itself (no explanations, no markdown, no descriptive text).
 
-Examples:
-- If a secret code "ABC123" is shown: ABC123
-- If asked to provide any value: test
-- If calculating 2+2: 4
-- If extracting a name "John Smith": John Smith
+GOOD Examples:
+- Secret code in element #secret: "ABC123" → Answer: ABC123
+- Element #code contains "XYZ789" → Answer: XYZ789
+- Asked for any value → Answer: test
+- Calculate 2+2 → Answer: 4
+
+BAD Examples (NEVER do this):
+- "the secret code you scraped" ❌
+- "the value from the page" ❌
+- "ABC123 is the answer" ❌
 
 Your answer:"""
         

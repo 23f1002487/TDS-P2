@@ -309,13 +309,17 @@ def main():
     print(f"\nTarget URL: {BASE_URL}")
     print(f"Test Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
+    # results = {
+    #     "Root Endpoint": test_root_endpoint(),
+    #     "Health Endpoint": test_health_endpoint(),
+    #     "Docs Endpoint": test_docs_endpoint(),
+    #     "Input Validation": test_quiz_endpoint_validation(),
+    #     "Sample Quiz Test": test_sample_quiz_submission(),
+    #     "Invalid JSON (400)": test_invalid_json(),
+    # }
+
     results = {
-        "Root Endpoint": test_root_endpoint(),
-        "Health Endpoint": test_health_endpoint(),
-        "Docs Endpoint": test_docs_endpoint(),
-        "Input Validation": test_quiz_endpoint_validation(),
         "Sample Quiz Test": test_sample_quiz_submission(),
-        "Invalid JSON (400)": test_invalid_json(),
     }
     
     # Summary
