@@ -134,9 +134,11 @@ class QuizSolver:
         result_div = soup.find(id='result')
         if result_div:
             text = result_div.get_text(separator='\n', strip=True)
+            result_html = str(result_div)
             logger.info("Found quiz in #result div")
         else:
             text = soup.get_text(separator='\n', strip=True)
+            result_html = html_content
             logger.info("Using full page text")
         
         # Extract links
@@ -147,10 +149,22 @@ class QuizSolver:
             links[link_text] = link_url
             logger.debug(f"Found link: {link_text} -> {link_url}")
         
+        # Extract all visible elements with IDs (might contain secret codes)
+        elements_with_ids = {}
+        for element in soup.find_all(id=True):
+            elem_id = element.get('id')
+            elem_text = element.get_text(strip=True)
+            if elem_text:  # Only include non-empty elements
+                elements_with_ids[elem_id] = elem_text
+        
+        logger.info(f"Extracted {len(elements_with_ids)} elements with IDs")
+        
         return {
             'text': text,
             'links': links,
-            'html': html_content
+            'html': html_content,
+            'result_html': result_html,  # HTML of just the result div (or full if no result div)
+            'elements_with_ids': elements_with_ids  # Dictionary of id -> text content
         }
     
     async def understand_task_with_langchain(self, quiz_info: Dict) -> Dict[str, Any]:
@@ -446,10 +460,20 @@ IMPORTANT: Respond with ONLY valid JSON."""
         """Answer a direct question without data analysis using LLM"""
         logger.info("Answering direct question with LLM")
         
+        # Get all available information
+        page_text = quiz_info['text'][:3000]
+        elements_with_ids = quiz_info.get('elements_with_ids', {})
+        
+        # Build comprehensive context
+        elements_info = "\n".join([f"- Element #{elem_id}: {elem_text[:200]}" for elem_id, elem_text in elements_with_ids.items()])
+        
         prompt = f"""You are answering a quiz question. Read the page content carefully and extract or compute the answer.
 
-Quiz Page Content:
-{quiz_info['text'][:3000]}
+Quiz Page Content (Text):
+{page_text}
+
+HTML Elements with IDs (may contain secrets/codes):
+{elements_info if elements_info else "No specific elements found"}
 
 Task: {task_info.get('task_summary')}
 Operation: {task_info.get('operation')}
