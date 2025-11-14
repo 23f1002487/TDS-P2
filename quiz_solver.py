@@ -449,10 +449,16 @@ IMPORTANT: Respond with ONLY valid JSON."""
         # Check if this is a meta-submission task (just testing submission format)
         operation = task_info.get('operation', '').lower()
         quiz_text_lower = quiz_info['text'].lower()
+        task_summary_lower = task_info.get('task_summary', '').lower()
         
-        if operation == 'meta_submission' or 'anything you want' in quiz_text_lower or 'any value' in quiz_text_lower:
-            logger.info("Detected meta-submission task - answer can be any value")
-            return "test"  # Simple placeholder value
+        # Only treat as meta-submission if explicitly about format AND has "anything" phrase
+        # Don't confuse with scraping or extraction tasks
+        is_scraping = any(word in task_summary_lower for word in ['scrape', 'extract', 'find', 'get', 'read'])
+        
+        if operation == 'meta_submission' and not is_scraping:
+            if 'anything you want' in quiz_text_lower or 'any value' in quiz_text_lower:
+                logger.info("Detected meta-submission task - answer can be any value")
+                return "test"  # Simple placeholder value
         
         prompt = f"""You are answering a quiz question. Read the question carefully and provide the answer.
 
@@ -618,6 +624,13 @@ IMPORTANT: Respond with ONLY valid JSON."""
     )
     async def submit_answer(self, submit_url: str, quiz_url: str, answer: Any) -> Dict:
         """Submit answer with retry logic"""
+        # Handle relative submit URLs
+        if submit_url.startswith('/'):
+            from urllib.parse import urlparse
+            parsed_quiz = urlparse(quiz_url)
+            submit_url = f"{parsed_quiz.scheme}://{parsed_quiz.netloc}{submit_url}"
+            logger.info(f"Converted relative URL to: {submit_url}")
+        
         payload = {
             "email": self.email,
             "secret": self.secret,
