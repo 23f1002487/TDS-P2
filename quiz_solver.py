@@ -260,7 +260,21 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
         import tempfile
         import os
         
-        file_ext = data_url.split('.')[-1].lower()
+        # Extract file extension safely (avoid getting domain parts)
+        url_parts = data_url.split('/')[-1].split('?')[0]  # Get filename without query params
+        valid_extensions = {'csv', 'xlsx', 'xls', 'json', 'pdf', 'parquet', 'html', 'xml', 'tsv', 'txt'}
+        
+        if '.' in url_parts:
+            file_ext = url_parts.split('.')[-1].lower()
+            if file_ext not in valid_extensions:
+                # Invalid extension, use data_source_type or default
+                type_map = {'csv': 'csv', 'excel': 'xlsx', 'json': 'json', 'pdf': 'pdf'}
+                file_ext = type_map.get(task_info.get('data_source_type', '').lower(), 'dat')
+        else:
+            # No extension in URL
+            type_map = {'csv': 'csv', 'excel': 'xlsx', 'json': 'json', 'pdf': 'pdf'}
+            file_ext = type_map.get(task_info.get('data_source_type', '').lower(), 'dat')
+        
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as tmp:
             tmp.write(data_content)
             tmp_path = tmp.name
