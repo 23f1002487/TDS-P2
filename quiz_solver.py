@@ -157,20 +157,31 @@ class QuizSolver:
             if elem_text:  # Only include non-empty elements
                 elements_with_ids[elem_id] = elem_text
         
-        logger.info(f"Extracted {len(elements_with_ids)} elements with IDs")
+        # Also extract script tags (they might contain secrets in JS code)
+        script_content = []
+        for script in soup.find_all('script'):
+            script_text = script.string
+            if script_text and len(script_text.strip()) > 0:
+                script_content.append(script_text.strip())
+        
+        logger.info(f"Extracted {len(elements_with_ids)} elements with IDs, {len(script_content)} script tags")
         
         # Log the elements for debugging
         if elements_with_ids:
             logger.debug("Elements with IDs found:")
             for elem_id, elem_text in elements_with_ids.items():
-                logger.debug(f"  - #{elem_id}: {elem_text[:100]}")
+                logger.debug(f"  - #{elem_id}: {elem_text[:200]}")
+        
+        if script_content:
+            logger.debug(f"Found {len(script_content)} script tags with content")
         
         return {
             'text': text,
             'links': links,
             'html': html_content,
             'result_html': result_html,  # HTML of just the result div (or full if no result div)
-            'elements_with_ids': elements_with_ids  # Dictionary of id -> text content
+            'elements_with_ids': elements_with_ids,  # Dictionary of id -> text content
+            'script_content': script_content  # List of script tag contents
         }
     
     async def understand_task_with_langchain(self, quiz_info: Dict) -> Dict[str, Any]:
@@ -469,39 +480,52 @@ IMPORTANT: Respond with ONLY valid JSON."""
         # Get all available information
         page_text = quiz_info['text'][:3000]
         elements_with_ids = quiz_info.get('elements_with_ids', {})
+        script_content = quiz_info.get('script_content', [])
         
         # Build comprehensive context
-        elements_info = "\n".join([f"- Element #{elem_id}: {elem_text[:200]}" for elem_id, elem_text in elements_with_ids.items()])
+        elements_info = "\n".join([f"- Element #{elem_id}: {elem_text[:300]}" for elem_id, elem_text in elements_with_ids.items()])
+        
+        # Include script content (might contain base64 encoded secrets or JS-generated values)
+        scripts_info = ""
+        if script_content:
+            scripts_info = "\n\nJavaScript Code Found on Page:\n" + "\n---\n".join(script_content[:2])  # First 2 scripts
         
         # Log what we're sending to LLM for debugging
         logger.debug(f"Page text length: {len(page_text)} chars")
         logger.debug(f"Elements with IDs: {len(elements_with_ids)}")
+        logger.debug(f"Script tags: {len(script_content)}")
         if elements_with_ids:
             logger.info(f"Available elements: {list(elements_with_ids.keys())}")
+            # Log the actual content for debugging
+            for elem_id, elem_text in elements_with_ids.items():
+                logger.debug(f"#{elem_id} content: {elem_text[:300]}")
         
         prompt = f"""You are answering a quiz question. Read the page content carefully and extract or compute the answer.
 
 Quiz Page Content (Text):
 {page_text}
 
-HTML Elements with IDs (these are important - secrets/codes are often in these):
+HTML Elements with IDs (these are CRUCIAL - secrets/codes appear here after JS execution):
 {elements_info if elements_info else "No specific elements found"}
+{scripts_info}
 
 Task: {task_info.get('task_summary')}
 Operation: {task_info.get('operation')}
 Additional Instructions: {task_info.get('additional_instructions', '')}
 
 CRITICAL INSTRUCTIONS:
-1. If the quiz asks you to "scrape" or "extract" a SECRET CODE, PASSWORD, or SPECIFIC TEXT:
-   - FIRST: Check the "HTML Elements with IDs" section above - secrets are usually there
-   - Look for elements with IDs like: "secret", "code", "password", "answer", "result"
-   - Extract the EXACT value shown in that element
-   - If not found in elements, search in the page text
-   - NEVER respond with "the secret code you scraped" or similar - give the ACTUAL VALUE
-   - If you truly cannot find it, say "NOT_FOUND" (but try hard to find it first!)
+1. If the quiz says you can provide "anything you want", "any value", "whatever you want", or similar:
+   - Provide a simple value like "test", "hello", or 42
+   - This takes PRIORITY over everything else
 
-2. If the quiz says you can provide "anything you want" or "any value":
-   - Provide any simple value like "test", "hello", or 42
+2. If the quiz asks you to "scrape" or "extract" a SECRET CODE, PASSWORD, or SPECIFIC TEXT:
+   - FIRST: Check the "HTML Elements with IDs" section - secrets appear there after JS runs
+   - Look for elements with IDs like: "secret", "code", "password", "answer", "result", "question"
+   - The element content shows what JavaScript rendered on the page
+   - Extract the EXACT value shown in that element
+   - If not in elements, check the JavaScript code section for base64 strings or hardcoded values
+   - NEVER respond with "the secret code you scraped" or similar - give the ACTUAL VALUE
+   - If you truly cannot find it, say "NOT_FOUND" (but only after checking everything!)
 
 3. If it's a calculation or data analysis question:
    - Perform the calculation based on information in the page
