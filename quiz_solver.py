@@ -482,79 +482,95 @@ IMPORTANT: Respond with ONLY valid JSON."""
         elements_with_ids = quiz_info.get('elements_with_ids', {})
         script_content = quiz_info.get('script_content', [])
         
-        # Build comprehensive context
-        elements_info = "\n".join([f"- Element #{elem_id}: {elem_text[:300]}" for elem_id, elem_text in elements_with_ids.items()])
-        
-        # Include script content (might contain base64 encoded secrets or JS-generated values)
-        scripts_info = ""
-        if script_content:
-            scripts_info = "\n\nJavaScript Code Found on Page:\n" + "\n---\n".join(script_content[:2])  # First 2 scripts
-        
         # Log what we're sending to LLM for debugging
         logger.debug(f"Page text length: {len(page_text)} chars")
         logger.debug(f"Elements with IDs: {len(elements_with_ids)}")
         logger.debug(f"Script tags: {len(script_content)}")
+        
+        # Build DYNAMIC context based on what we actually have
+        context_parts = []
+        
+        # Part 1: Main page text
+        context_parts.append(f"=== PAGE CONTENT ===\n{page_text}\n")
+        
+        # Part 2: Elements with IDs (if any)
         if elements_with_ids:
             logger.info(f"Available elements: {list(elements_with_ids.keys())}")
-            # Log the actual content for debugging
+            elements_section = "=== RENDERED HTML ELEMENTS (after JavaScript execution) ===\n"
             for elem_id, elem_text in elements_with_ids.items():
+                elements_section += f"\nElement ID: #{elem_id}\nContent: {elem_text[:500]}\n"
                 logger.debug(f"#{elem_id} content: {elem_text[:300]}")
+            context_parts.append(elements_section)
         
-        prompt = f"""You are answering a quiz question. Read the page content carefully and extract or compute the answer.
+        # Part 3: Script content (if any)
+        if script_content:
+            scripts_section = "=== JAVASCRIPT CODE ON PAGE ===\n"
+            for i, script in enumerate(script_content[:2], 1):  # First 2 scripts
+                scripts_section += f"\n--- Script {i} ---\n{script[:1000]}\n"
+            context_parts.append(scripts_section)
+        
+        # Combine all context
+        full_context = "\n".join(context_parts)
+        
+        # Build DYNAMIC instructions based on task
+        task_summary = task_info.get('task_summary', '').lower()
+        operation = task_info.get('operation', '').lower()
+        
+        # Detect what type of question this is
+        is_meta_task = any(phrase in task_summary for phrase in ['anything you want', 'any value', 'whatever', 'your choice'])
+        is_scraping_task = any(phrase in task_summary for phrase in ['scrape', 'extract', 'get the', 'find the'])
+        has_elements = len(elements_with_ids) > 0
+        has_scripts = len(script_content) > 0
+        
+        # Build dynamic instructions
+        instructions = []
+        
+        if is_meta_task:
+            instructions.append("✓ This quiz allows you to provide ANY value you want.")
+            instructions.append("→ Simply respond with a value like: test")
+        elif is_scraping_task and has_elements:
+            instructions.append("✓ This is a SCRAPING task - extract information from the page.")
+            instructions.append(f"→ Check the 'RENDERED HTML ELEMENTS' section - there are {len(elements_with_ids)} element(s) with IDs.")
+            instructions.append(f"→ Available element IDs: {', '.join(elements_with_ids.keys())}")
+            instructions.append("→ Extract the EXACT text content from the relevant element.")
+        elif is_scraping_task and has_scripts:
+            instructions.append("✓ This is a SCRAPING task with JavaScript.")
+            instructions.append("→ Check the 'JAVASCRIPT CODE' section for values that might be base64 encoded or hardcoded.")
+            instructions.append("→ The secret might be in a variable, base64 string, or generated dynamically.")
+        else:
+            instructions.append("✓ Read the page content and answer the question directly.")
+        
+        instructions.append("\n⚠️ IMPORTANT: Respond with ONLY the answer value itself (no explanations, no formatting).")
+        
+        dynamic_instructions = "\n".join(instructions)
+        
+        prompt = f"""You are answering a quiz question. Analyze the content below and provide the answer.
 
-Quiz Page Content (Text):
-{page_text}
+{full_context}
 
-HTML Elements with IDs (these are CRUCIAL - secrets/codes appear here after JS execution):
-{elements_info if elements_info else "No specific elements found"}
-{scripts_info}
-
+=== TASK INFORMATION ===
 Task: {task_info.get('task_summary')}
-Operation: {task_info.get('operation')}
-Additional Instructions: {task_info.get('additional_instructions', '')}
+Operation: {operation}
+Additional Info: {task_info.get('additional_instructions', 'None')}
 
-CRITICAL INSTRUCTIONS:
-1. If the quiz says you can provide "anything you want", "any value", "whatever you want", or similar:
-   - Provide a simple value like "test", "hello", or 42
-   - This takes PRIORITY over everything else
-
-2. If the quiz asks you to "scrape" or "extract" a SECRET CODE, PASSWORD, or SPECIFIC TEXT:
-   - FIRST: Check the "HTML Elements with IDs" section - secrets appear there after JS runs
-   - Look for elements with IDs like: "secret", "code", "password", "answer", "result", "question"
-   - The element content shows what JavaScript rendered on the page
-   - Extract the EXACT value shown in that element
-   - If not in elements, check the JavaScript code section for base64 strings or hardcoded values
-   - NEVER respond with "the secret code you scraped" or similar - give the ACTUAL VALUE
-   - If you truly cannot find it, say "NOT_FOUND" (but only after checking everything!)
-
-3. If it's a calculation or data analysis question:
-   - Perform the calculation based on information in the page
-   - Return the computed result
-
-4. If it's asking for information shown on the page:
-   - Read and extract that specific information
-   - Return it exactly as shown
-
-Respond with ONLY the answer value itself (no explanations, no markdown, no descriptive text).
-
-GOOD Examples:
-- Secret code in element #secret: "ABC123" → Answer: ABC123
-- Element #code contains "XYZ789" → Answer: XYZ789
-- Asked for any value → Answer: test
-- Calculate 2+2 → Answer: 4
-
-BAD Examples (NEVER do this):
-- "the secret code you scraped" ❌
-- "the value from the page" ❌
-- "ABC123 is the answer" ❌
+=== INSTRUCTIONS FOR YOU ===
+{dynamic_instructions}
 
 Your answer:"""
         
         try:
+            # Dynamic system prompt based on task type
+            if is_meta_task:
+                system_prompt = "You provide simple direct answers. When asked for 'any value', give a simple value like 'test'."
+            elif is_scraping_task:
+                system_prompt = "You extract exact values from content. Never paraphrase or describe - return the actual value found."
+            else:
+                system_prompt = "You answer questions concisely with just the answer value, no explanation."
+            
             response = await self.llm_client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that answers questions concisely. Provide only the answer without explanation."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
