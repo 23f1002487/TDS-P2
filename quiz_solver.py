@@ -14,11 +14,11 @@ from playwright.async_api import async_playwright, Page, Browser
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 
-from enhanced_data_processor import EnhancedDataProcessor
+from data_processor import EnhancedDataProcessor
 from visualization import Visualizer
 
 
-class UltimateQuizSolver:
+class QuizSolver:
     """
     Production-grade quiz solver with:
     - Playwright for reliable JS rendering
@@ -53,7 +53,7 @@ class UltimateQuizSolver:
         self.browser: Optional[Browser] = None
         self.playwright = None
         
-        logger.info(f"UltimateQuizSolver initialized with model: {model_name}")
+        logger.info(f"QuizSolver initialized with model: {model_name}")
     
     async def __aenter__(self):
         """Async context manager entry"""
