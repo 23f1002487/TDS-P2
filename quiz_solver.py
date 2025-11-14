@@ -247,6 +247,13 @@ IMPORTANT: Respond with ONLY valid JSON, no other text."""
         # Download data
         data_content = await self.download_data(data_url)
         
+        # Check if downloaded content is HTML (quiz page instead of actual data)
+        content_str = data_content.decode('utf-8', errors='ignore')[:200].strip()
+        if content_str.startswith('<') or content_str.startswith('<!DOCTYPE'):
+            logger.warning("Downloaded content appears to be HTML, not data. Skipping data processing.")
+            logger.info(f"Content preview: {content_str[:100]}")
+            return None, None
+        
         # Build kwargs for loading
         kwargs = {}
         if task_info.get('page_number'):
