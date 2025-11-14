@@ -165,14 +165,20 @@ Quiz Instructions:
 Available Links:
 {json.dumps(quiz_info['links'], indent=2)}
 
+IMPORTANT RULES:
+1. If the instructions say to "POST this JSON" or show a JSON template to submit, this is a META-TASK about submission format
+2. Look for phrases like "anything you want", "any value", or placeholders - these mean NO data analysis is needed
+3. Only set "data_source_url" if there's a SEPARATE data file link (CSV, Excel, JSON data file, PDF with data)
+4. DO NOT confuse the quiz page URL or submission instructions with a data source
+
 Provide a detailed analysis in JSON format:
 {{
     "task_summary": "Brief description of what needs to be done",
-    "data_source_url": "URL of the data file to download (if any)",
+    "data_source_url": "URL of ACTUAL DATA FILE to download (leave empty if no data file)",
     "data_source_type": "pdf|csv|excel|json|html|image",
     "page_number": "specific page number if mentioned (for PDFs)",
     "target_column": "column name to analyze",
-    "operation": "sum|average|count|max|min|filter|group|visualize|other",
+    "operation": "sum|average|count|max|min|filter|group|visualize|other|meta_submission",
     "operation_details": "specific details about the operation",
     "expected_answer_type": "number|string|boolean|json|base64_image",
     "submit_url": "URL where answer should be submitted",
@@ -440,6 +446,14 @@ IMPORTANT: Respond with ONLY valid JSON."""
         """Answer a direct question without data analysis using LLM"""
         logger.info("Answering direct question with LLM")
         
+        # Check if this is a meta-submission task (just testing submission format)
+        operation = task_info.get('operation', '').lower()
+        quiz_text_lower = quiz_info['text'].lower()
+        
+        if operation == 'meta_submission' or 'anything you want' in quiz_text_lower or 'any value' in quiz_text_lower:
+            logger.info("Detected meta-submission task - answer can be any value")
+            return "test"  # Simple placeholder value
+        
         prompt = f"""You are answering a quiz question. Read the question carefully and provide the answer.
 
 Quiz Content:
@@ -450,6 +464,7 @@ Operation: {task_info.get('operation')}
 Additional Instructions: {task_info.get('additional_instructions', '')}
 
 Analyze the question and provide a direct answer. If the question is:
+- A meta-task asking to submit JSON with "anything you want" or "any value": return a simple placeholder like "test"
 - A math problem: calculate and return the numeric answer
 - A factual question: return the factual answer
 - A multiple choice: return the correct option
@@ -459,6 +474,7 @@ Respond with ONLY the answer value itself (number, string, etc.), without any ex
 Examples:
 - If answer is a number: 42
 - If answer is text: "Paris"
+- If answer can be anything: "test"
 - If answer is a list: ["item1", "item2"]
 
 Your answer:"""
