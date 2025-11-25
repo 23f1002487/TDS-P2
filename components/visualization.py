@@ -8,6 +8,7 @@ import seaborn as sns
 import logging
 from io import BytesIO
 import base64
+from .fallback_strategies import VisualizationFallbackStrategy, VizEngine
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,14 @@ class Visualizer:
         # Set style
         sns.set_style("whitegrid")
         plt.rcParams['figure.figsize'] = (10, 6)
+        
+        # Check visualization capabilities
+        self.availability = VisualizationFallbackStrategy.check_availability()
+        self.selected_engine = VisualizationFallbackStrategy.select_engine(
+            prefer_interactive=True,
+            need_static_export=True,
+            availability=self.availability
+        )
     
     @staticmethod
     def create_bar_chart(data, x_col, y_col, title="Bar Chart", xlabel=None, ylabel=None):
@@ -39,6 +48,71 @@ class Visualizer:
             raise
         finally:
             plt.close()
+
+    # ================== PLOTLY SUPPORT ==================
+    @staticmethod
+    def create_plotly_chart(data, chart_type: str, x_col: str, y_col: str, title: str = "Chart", registry=None):
+        """Create an interactive Plotly chart. Falls back to Matplotlib if plotly unavailable.
+        Returns dict with base64 image and optionally JSON spec.
+        
+        Args:
+            data: DataFrame to visualize
+            chart_type: Type of chart
+            x_col: X-axis column
+            y_col: Y-axis column
+            title: Chart title
+            registry: Optional CapabilityRegistry to record engine used
+        """
+        try:
+            import plotly.express as px
+            fig = None
+            if chart_type == 'bar_chart':
+                fig = px.bar(data, x=x_col, y=y_col, title=title)
+            elif chart_type == 'line_chart':
+                fig = px.line(data, x=x_col, y=y_col, title=title)
+            elif chart_type == 'scatter_plot':
+                fig = px.scatter(data, x=x_col, y=y_col, title=title)
+            elif chart_type == 'pie_chart':
+                fig = px.pie(data, names=x_col, values=y_col, title=title)
+            elif chart_type == 'histogram':
+                fig = px.histogram(data, x=x_col, title=title)
+            else:
+                fig = px.bar(data, x=x_col, y=y_col, title=title)
+
+            # Export static image if kaleido present
+            img_b64 = None
+            kaleido_available = False
+            try:
+                png_bytes = fig.to_image(format="png", scale=2)
+                img_b64 = base64.b64encode(png_bytes).decode('utf-8')
+                kaleido_available = True
+            except Exception as e:
+                logger.warning(f"Plotly static export failed: {e}")
+
+            if registry:
+                registry.record("viz_engine", "plotly")
+                registry.record("viz_static_export", kaleido_available)
+
+            return {
+                'type': 'plotly',
+                'chart_type': chart_type,
+                'title': title,
+                'image_base64': img_b64,
+                'spec': fig.to_json()
+            }
+        except Exception as e:
+            logger.warning(f"Plotly unavailable or failed ({e}); falling back to Matplotlib")
+            if registry:
+                registry.record("viz_engine", "matplotlib-fallback")
+            # Fallback to existing bar chart
+            b64 = Visualizer.create_bar_chart(data, x_col, y_col, title)
+            return {
+                'type': 'matplotlib-fallback',
+                'chart_type': chart_type,
+                'title': title,
+                'image_base64': b64,
+                'spec': None
+            }
     
     @staticmethod
     def create_line_chart(data, x_col, y_col, title="Line Chart", xlabel=None, ylabel=None):

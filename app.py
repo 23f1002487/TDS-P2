@@ -19,7 +19,7 @@ from loguru import logger
 import httpx
 import json
 
-from quiz_solver import QuizSolver
+from components.quiz_solver import QuizSolver
 
 
 # region Configuration
@@ -33,8 +33,12 @@ class Settings(BaseSettings):
     student_secret: str = Field(..., min_length=1, description="Authentication secret")
     aipipe_token: str = Field(..., min_length=20, description="AIPipe API token")
     aipipe_base_url: str = Field(default="https://aipipe.org/openai/v1", description="AIPipe base URL")
-    openai_model: str = Field(default="gpt-4o-mini", description="Model name without provider prefix")
+    openai_model: str = Field(default="gpt-5-mini", description="Model name without provider prefix")
     port: int = Field(default=7860, ge=1, le=65535)
+    
+    # 💡 ADD THESE TWO FIELDS 💡
+    log_level: str = Field(default="INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR)")
+    max_concurrent_quizzes: int = Field(default=3, ge=1, description="Maximum number of simultaneous quizzes")
     
     @validator('openai_model')
     def remove_provider_prefix(cls, v):
@@ -315,7 +319,8 @@ async def health_check():
     }
 
 
-@app.post("/quiz", response_model=QuizResponse, tags=["Quiz"], 
+@app.post("/quiz/", response_model=QuizResponse, tags=["Quiz"], 
+          status_code=status.HTTP_200_OK,
           responses={
               200: {"description": "Quiz accepted for processing"},
               400: {"description": "Invalid JSON format"},

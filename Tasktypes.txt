@@ -1,0 +1,6 @@
+- Scraping a website (which may require JavaScript) for information. 
+- Sourcing from an API (with API-specific headers provided where required)
+- Cleansing text / data / PDF / … you retrieved
+- Processing the data (e.g. data transformation, transcription, vision)
+- Analysing by filtering, sorting, aggregating, reshaping, or applying statistical / ML models. Includes geo-spatial / network analysis
+- Visualizing by generating charts (as images or interactive), narratives, slides"
