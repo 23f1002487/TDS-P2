@@ -44,13 +44,14 @@ Available Links:
 IMPORTANT RULES:
 1. If the instructions say to "POST this JSON" or show a JSON template to submit, this is a META-TASK about submission format
 2. If instructions ask to "submit the command string" or "craft a command", the answer IS THE LITERAL COMMAND STRING, not its output
-3. Look for phrases like "anything you want", "any value", or placeholders - these mean NO data analysis is needed
-4. Set "data_source_url" ONLY if you need to download and analyze data:
-   - A SEPARATE data file link (CSV, Excel, JSON, PDF with data to analyze)
+3. If instructions say "normalize/convert/transform CSV to JSON", this is DATA TRANSFORMATION (operation: transform_to_json), NOT analysis
+4. Look for phrases like "anything you want", "any value", or placeholders - these mean NO data analysis is needed
+5. Set "data_source_url" ONLY if you need to download data:
+   - A SEPARATE data file link (CSV, Excel, JSON, PDF with data)
    - A page/URL mentioned to SCRAPE (e.g., "Scrape /demo-scrape-data", "Get the secret from /page")
    - DO NOT set data_source_url if the task is to construct a command string
-5. DO NOT confuse the quiz page URL or submission endpoint (/submit) with a data source
-6. If instructions say "Scrape [URL]" or "Get [something] from [URL]", that URL is the data_source_url
+6. DO NOT confuse the quiz page URL or submission endpoint (/submit) with a data source
+7. If instructions say "Scrape [URL]" or "Get [something] from [URL]", that URL is the data_source_url
 
 Provide a detailed analysis in JSON format:
 {{
@@ -59,7 +60,7 @@ Provide a detailed analysis in JSON format:
     "data_source_type": "pdf|csv|excel|json|html|image|api",
     "page_number": "specific page number if mentioned (for PDFs)",
     "target_column": "column name to analyze",
-    "operation": "sum|average|count|max|min|filter|group|visualize|transcribe|command_string|meta_submission|other",
+    "operation": "sum|average|count|max|min|filter|group|visualize|transcribe|command_string|transform_to_json|meta_submission|other",
     "operation_details": "specific details about the operation",
     "expected_answer_type": "number|string|boolean|json|base64_image",
     "submit_url": "URL where answer should be submitted",

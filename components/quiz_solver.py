@@ -189,16 +189,26 @@ class QuizSolver:
                     logger.info(f"Image/vision task detected - downloading from: {data_url}")
                     image_data = await self.analyzer.download_data(data_url, registry=self.cap_registry)
                     
-                    # Perform OCR
-                    logger.info("Extracting text from image via OCR")
-                    ocr_text = self.vision.ocr_bytes(image_data, registry=self.cap_registry)
-                    logger.success(f"OCR result: {ocr_text[:200]}...")
+                    # Check if this is a color analysis task (heatmap, color frequency, etc.)
+                    task_lower = task_info.get('task_summary', '').lower()
+                    is_color_task = any(keyword in task_lower for keyword in ['color', 'rgb', 'heatmap', 'hex', 'dominant'])
                     
-                    # Use LLM to analyze OCR text and answer the question
-                    context = f"OCR extracted text from image:\n{ocr_text}\n\nTask: {task_info.get('task_summary')}"
-                    answer = await self.llm_client.answer_direct_question(
-                        context, task_info, is_meta_task=False, is_scraping_task=False
-                    )
+                    if is_color_task:
+                        # Use pixel color analysis instead of OCR
+                        logger.info("Color analysis task detected - analyzing pixel colors")
+                        answer = self.vision.get_dominant_color_hex(image_data, registry=self.cap_registry)
+                        logger.success(f"Dominant color result: {answer}")
+                    else:
+                        # Perform OCR for text extraction
+                        logger.info("Extracting text from image via OCR")
+                        ocr_text = self.vision.ocr_bytes(image_data, registry=self.cap_registry)
+                        logger.success(f"OCR result: {ocr_text[:200]}...")
+                        
+                        # Use LLM to analyze OCR text and answer the question
+                        context = f"OCR extracted text from image:\n{ocr_text}\n\nTask: {task_info.get('task_summary')}"
+                        answer = await self.llm_client.answer_direct_question(
+                            context, task_info, is_meta_task=False, is_scraping_task=False
+                        )
                     
                     # Format and submit
                     formatted_answer = self.analyzer.format_answer(answer, task_info.get('expected_answer_type', 'string'))
@@ -238,6 +248,54 @@ class QuizSolver:
             
             # Step 4: Download and process data (if data source exists)
             df, table_name = await self.analyzer.process_data(task_info, quiz_url, registry=self.cap_registry)
+            
+            # Step 4b: Handle data transformation tasks (CSV to JSON, etc.)
+            if df is not None and task_info.get('operation') == 'transform_to_json':
+                logger.info("Data transformation task detected - converting to JSON array")
+                # Convert DataFrame to JSON array format
+                import json
+                json_array = json.loads(df.to_json(orient='records'))
+                
+                # Sort by id if present
+                if 'id' in df.columns:
+                    json_array = sorted(json_array, key=lambda x: x.get('id', 0))
+                
+                # Format as JSON string
+                formatted_answer = json.dumps(json_array)
+                logger.success(f"Transformed data to JSON array with {len(json_array)} records")
+                
+                # Generate narrative
+                narrative = None
+                try:
+                    narrative = await self.report_builder.build(task_info, formatted_answer)
+                    self.cap_registry.record("narrative", True)
+                    logger.info(f"Narrative generated: {narrative.get('text','')[:80]}...")
+                except Exception as ne:
+                    logger.warning(f"Narrative generation failed: {ne}")
+                    narrative = {"text": "Narrative unavailable", "error": str(ne)}
+                
+                # Submit
+                submit_url = task_info.get('submit_url')
+                from urllib.parse import urlparse
+                if not submit_url or submit_url == quiz_url:
+                    parsed = urlparse(quiz_url)
+                    submit_url = f"{parsed.scheme}://{parsed.netloc}/submit"
+                    logger.info(f"Using default submit endpoint: {submit_url}")
+                else:
+                    parsed_submit = urlparse(submit_url)
+                    submit_path = parsed_submit.path.rstrip('/')
+                    if not submit_path.endswith('/submit') and ('project2' in submit_path or 'demo-' in submit_path or '?' in submit_url):
+                        parsed = urlparse(quiz_url)
+                        submit_url = f"{parsed.scheme}://{parsed.netloc}/submit"
+                        logger.info(f"Detected quiz page URL as submit_url, using default: {submit_url}")
+                
+                result = await self.submit_answer(submit_url, quiz_url, formatted_answer)
+                if isinstance(result, dict):
+                    if narrative:
+                        result['narrative'] = narrative
+                    result['capabilities_used'] = self.cap_registry.snapshot()
+                logger.success(f"Quiz result: {result}")
+                return result
             
             # Step 5: Perform analysis or answer directly
             if df is not None and isinstance(df, tuple) and df[0] == 'HTML_SCRAPING':

@@ -92,3 +92,45 @@ class VisionExtractor:
         if registry:
             registry.record("ocr_engine", "unavailable")
         return "OCR_UNAVAILABLE"
+
+    def get_dominant_color_hex(self, content: bytes, registry=None) -> str:
+        """Extract the most frequent RGB color from an image and return as hex.
+        
+        Args:
+            content: Image bytes
+            registry: Optional CapabilityRegistry to record operation
+        
+        Returns:
+            Hex color string (e.g., "#ff5733")
+        """
+        try:
+            img = Image.open(io.BytesIO(content))
+            # Convert to RGB if necessary
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Get all pixels
+            pixels = list(img.getdata())
+            
+            # Count color frequencies
+            from collections import Counter
+            color_counts = Counter(pixels)
+            
+            # Get most common color
+            most_common_rgb = color_counts.most_common(1)[0][0]
+            
+            # Convert RGB to hex
+            hex_color = "#{:02x}{:02x}{:02x}".format(most_common_rgb[0], most_common_rgb[1], most_common_rgb[2])
+            
+            logger.success(f"Dominant color extracted: {hex_color}")
+            if registry:
+                registry.record("color_analysis", "success")
+            
+            return hex_color
+            
+        except Exception as e:
+            logger.error(f"Color analysis failed: {e}")
+            if registry:
+                registry.record("color_analysis", "failed")
+            return "#000000"  # Return black as fallback
+
