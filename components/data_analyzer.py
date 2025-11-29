@@ -293,19 +293,27 @@ class EnhancedDataProcessor:
             try:
                 with zipfile.ZipFile(io.BytesIO(content)) as zf:
                     zf.extractall(temp_dir)
+                    logger.info(f"Extracted ZIP contents: {zf.namelist()}")
                     
                 # Find first data file in extracted contents
                 data_file = None
+                all_files = []
                 for root, dirs, files in os.walk(temp_dir):
                     for file in files:
-                        if file.lower().endswith(('.csv', '.json', '.xlsx', '.xls', '.txt')):
+                        all_files.append(file)
+                        # Look for common data file extensions, including log files
+                        if file.lower().endswith(('.csv', '.json', '.xlsx', '.xls', '.txt', '.log', '.tsv')):
+                            data_file = os.path.join(root, file)
+                            break
+                        # Also accept files without extensions as potential data files
+                        elif '.' not in file:
                             data_file = os.path.join(root, file)
                             break
                     if data_file:
                         break
                 
                 if not data_file:
-                    logger.error("No data file found in ZIP archive")
+                    logger.error(f"No data file found in ZIP archive. Files present: {all_files}")
                     df = pd.DataFrame()
                 else:
                     logger.info(f"Found data file in ZIP: {os.path.basename(data_file)}")
