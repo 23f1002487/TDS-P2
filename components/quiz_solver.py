@@ -180,6 +180,13 @@ class QuizSolver:
             
             # Step 6: Submit answer
             submit_url = task_info.get('submit_url')
+            # Validate submit_url: default to /submit if not provided or if it matches the quiz URL
+            if not submit_url or submit_url == quiz_url or 'project2-uv' in submit_url:
+                # Extract base domain and use /submit endpoint
+                from urllib.parse import urlparse
+                parsed = urlparse(quiz_url)
+                submit_url = f"{parsed.scheme}://{parsed.netloc}/submit"
+                logger.info(f"Using default submit endpoint: {submit_url}")
             result = await self.submit_answer(submit_url, quiz_url, formatted_answer)
 
             # Attach narrative & capabilities to result for downstream consumers
