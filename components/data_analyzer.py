@@ -407,12 +407,45 @@ class DataAnalyzer:
         data_content = await self.download_data(data_url, headers=custom_headers, registry=registry)
         
         # Check if downloaded content is HTML when we expected data
-        content_str = data_content.decode('utf-8', errors='ignore')[:500].strip()
+        content_str = data_content.decode('utf-8', errors='ignore')[:1000].strip()
         if content_str.startswith('<') or content_str.startswith('<!DOCTYPE'):
-            # Got HTML when expecting data file
-            logger.warning("Downloaded content appears to be HTML, not a data file. Skipping data processing.")
-            logger.info(f"Content preview: {content_str[:100]}")
-            return None, None
+            # Got HTML when expecting data file: attempt to discover linked data resources (e.g., CSV)
+            logger.warning("Downloaded content appears to be HTML, not a data file. Attempting to locate linked data resources.")
+            logger.info(f"Content preview: {content_str[:200]}")
+
+            # Simple href parser for CSV/JSON/TSV links
+            linked_url = None
+            try:
+                import re
+                # Find first href that points to a likely data file
+                hrefs = re.findall(r'href\s*=\s*\"([^\"]+)\"', content_str, flags=re.IGNORECASE)
+                candidates = []
+                for h in hrefs:
+                    hl = h.lower()
+                    if any(hl.endswith(ext) or ext in hl for ext in [".csv", ".tsv", ".json", ".parquet"]):
+                        candidates.append(h)
+                if candidates:
+                    linked_url = candidates[0]
+            except Exception as e:
+                logger.error(f"Error scanning HTML for linked data: {e}")
+
+            if linked_url:
+                # Resolve relative URL using quiz_url or current data_url as base
+                try:
+                    base_for_join = quiz_url or data_url
+                    resolved_url = urljoin(base_for_join, linked_url)
+                    logger.info(f"Found linked data resource: {linked_url} -> {resolved_url}")
+                    # Download the linked data
+                    data_content = await self.download_data(resolved_url, headers=custom_headers, registry=registry)
+                    data_url = resolved_url
+                    logger.success(f"Downloaded linked data: {len(data_content)} bytes")
+                except Exception as e:
+                    logger.error(f"Failed to download linked data resource: {e}")
+                    return None, None
+            else:
+                # No linked data found; nothing to process
+                logger.warning("No linked data resources (CSV/JSON/TSV) found in HTML. Skipping data processing.")
+                return None, None
         
         # Build kwargs for loading
         kwargs = {}
