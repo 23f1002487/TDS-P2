@@ -6,6 +6,8 @@ Unified component containing data processing and analysis logic
 import tempfile
 import os
 import re
+import io
+import zipfile
 from typing import Optional, Dict, Any, Tuple
 from urllib.parse import urljoin
 from io import BytesIO
@@ -274,11 +276,46 @@ class EnhancedDataProcessor:
         # Detect type from file extension if auto
         if source_type == 'auto':
             ext = file_path.split('.')[-1].lower()
-            type_map = {'csv': 'csv', 'xlsx': 'excel', 'xls': 'excel', 'json': 'json', 'pdf': 'pdf'}
+            type_map = {'csv': 'csv', 'xlsx': 'excel', 'xls': 'excel', 'json': 'json', 'pdf': 'pdf', 'zip': 'zip'}
             source_type = type_map.get(ext, 'csv')
         
         # Load data
-        if source_type == 'pdf':
+        if source_type == 'zip':
+            # Extract ZIP and process first data file found
+            import zipfile
+            import tempfile
+            import os
+            
+            logger.info("Processing ZIP archive")
+            temp_dir = tempfile.mkdtemp()
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                    zf.extractall(temp_dir)
+                    
+                # Find first data file in extracted contents
+                data_file = None
+                for root, dirs, files in os.walk(temp_dir):
+                    for file in files:
+                        if file.lower().endswith(('.csv', '.json', '.xlsx', '.xls', '.txt')):
+                            data_file = os.path.join(root, file)
+                            break
+                    if data_file:
+                        break
+                
+                if not data_file:
+                    logger.error("No data file found in ZIP archive")
+                    df = pd.DataFrame()
+                else:
+                    logger.info(f"Found data file in ZIP: {os.path.basename(data_file)}")
+                    # Recursively process the extracted file
+                    df, _ = self.complete_data_pipeline(data_file, source_type='auto', registry=registry, **kwargs)
+                    
+            finally:
+                # Cleanup temp directory
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
+        elif source_type == 'pdf':
             tables = self.load_pdf(content, **kwargs)
             df = tables[0] if tables else pd.DataFrame()
         elif source_type == 'csv':
@@ -458,7 +495,7 @@ class DataAnalyzer:
         
         # Extract file extension safely
         url_parts = data_url.split('/')[-1].split('?')[0]
-        valid_extensions = {'csv', 'xlsx', 'xls', 'json', 'pdf', 'parquet', 'html', 'xml', 'tsv', 'txt'}
+        valid_extensions = {'csv', 'xlsx', 'xls', 'json', 'pdf', 'parquet', 'html', 'xml', 'tsv', 'txt', 'zip'}
         
         if '.' in url_parts:
             file_ext = url_parts.split('.')[-1].lower()
