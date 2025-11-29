@@ -14,6 +14,7 @@ import httpx
 from . import LLMClient, WebScraper, DataAnalyzer
 from .report_builder import ReportBuilder
 from .capability_registry import CapabilityRegistry
+from .transcriber import AudioTranscriber
 
 # Configure logger to write to production_log.log
 logger.add("production_log.log", rotation="10 MB", retention="7 days", level="DEBUG")
@@ -37,6 +38,7 @@ class QuizSolver:
         self.llm_client = LLMClient(aipipe_token, aipipe_base_url, model_name)
         self.scraper = WebScraper()
         self.analyzer = DataAnalyzer()
+        self.transcriber = AudioTranscriber(api_key=aipipe_token)
         self.report_builder = ReportBuilder(self.llm_client)
         self.cap_registry = CapabilityRegistry()
         
@@ -115,10 +117,68 @@ class QuizSolver:
             task_info = await self.llm_client.understand_task(quiz_info)
             self.cap_registry.record("operations", task_info.get('operation'))
             
-            # Step 3: Download and process data (if data source exists)
+            # Step 3: Handle audio transcription tasks separately
+            if task_info.get('operation') == 'transcribe' or task_info.get('data_source_type') == 'audio':
+                data_url = task_info.get('data_source_url')
+                if data_url:
+                    # Resolve relative URL
+                    if not data_url.startswith('http://') and not data_url.startswith('https://'):
+                        from urllib.parse import urljoin
+                        data_url = urljoin(quiz_url, data_url)
+                    
+                    logger.info(f"Audio transcription task detected - downloading from: {data_url}")
+                    audio_data = await self.analyzer.download_data(data_url, registry=self.cap_registry)
+                    
+                    # Get filename from URL
+                    filename = data_url.split('/')[-1].split('?')[0]
+                    if not filename or '.' not in filename:
+                        filename = "audio.opus"
+                    
+                    # Transcribe
+                    logger.info(f"Transcribing audio file: {filename}")
+                    transcription = await self.transcriber.transcribe_bytes(audio_data, filename, registry=self.cap_registry)
+                    logger.success(f"Transcription result: {transcription}")
+                    
+                    # Format and submit
+                    formatted_answer = self.analyzer.format_answer(transcription, task_info.get('expected_answer_type', 'string'))
+                    
+                    # Generate narrative
+                    narrative = None
+                    try:
+                        narrative = await self.report_builder.build(task_info, formatted_answer)
+                        self.cap_registry.record("narrative", True)
+                        logger.info(f"Narrative generated: {narrative.get('text','')[:80]}...")
+                    except Exception as ne:
+                        logger.warning(f"Narrative generation failed: {ne}")
+                        narrative = {"text": "Narrative unavailable", "error": str(ne)}
+                    
+                    # Submit
+                    submit_url = task_info.get('submit_url')
+                    from urllib.parse import urlparse
+                    if not submit_url or submit_url == quiz_url:
+                        parsed = urlparse(quiz_url)
+                        submit_url = f"{parsed.scheme}://{parsed.netloc}/submit"
+                        logger.info(f"Using default submit endpoint: {submit_url}")
+                    else:
+                        parsed_submit = urlparse(submit_url)
+                        submit_path = parsed_submit.path.rstrip('/')
+                        if not submit_path.endswith('/submit') and ('project2' in submit_path or 'demo-' in submit_path or '?' in submit_url):
+                            parsed = urlparse(quiz_url)
+                            submit_url = f"{parsed.scheme}://{parsed.netloc}/submit"
+                            logger.info(f"Detected quiz page URL as submit_url, using default: {submit_url}")
+                    
+                    result = await self.submit_answer(submit_url, quiz_url, formatted_answer)
+                    if isinstance(result, dict):
+                        if narrative:
+                            result['narrative'] = narrative
+                        result['capabilities_used'] = self.cap_registry.snapshot()
+                    logger.success(f"Quiz result: {result}")
+                    return result
+            
+            # Step 4: Download and process data (if data source exists)
             df, table_name = await self.analyzer.process_data(task_info, quiz_url, registry=self.cap_registry)
             
-            # Step 4: Perform analysis or answer directly
+            # Step 5: Perform analysis or answer directly
             if df is not None and isinstance(df, tuple) and df[0] == 'HTML_SCRAPING':
                 # This is an HTML scraping task - use Playwright to fetch with JS execution
                 _, scraping_url, _ = df
@@ -178,7 +238,7 @@ class QuizSolver:
                 narrative = {"text": "Narrative unavailable", "error": str(ne)}
                 self.cap_registry.record("narrative_failed", True)
             
-            # Step 6: Submit answer
+            # Step 7: Submit answer
             submit_url = task_info.get('submit_url')
             # Validate submit_url: default to /submit if not provided or if it looks like a quiz page
             from urllib.parse import urlparse
