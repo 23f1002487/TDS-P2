@@ -229,14 +229,14 @@ Your answer:"""
             if answer.startswith('{') or answer.startswith('['):
                 try:
                     answer = json.loads(answer)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     pass
             
             # Try to convert to number if it looks like a number
             elif answer.replace('.', '', 1).replace('-', '', 1).isdigit():
                 try:
                     answer = float(answer) if '.' in answer else int(answer)
-                except:
+                except (ValueError, TypeError):
                     pass
             
             logger.success(f"Direct question answer: {answer}")

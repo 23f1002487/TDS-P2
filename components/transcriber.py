@@ -2,8 +2,7 @@
 Provides async transcription for audio quiz tasks with graceful fallbacks.
 """
 from loguru import logger
-from typing import Optional, Union
-import asyncio
+from typing import Optional
 import io
 import base64
 from .fallback_strategies import TranscriptionFallbackStrategy, TranscriptionEngine

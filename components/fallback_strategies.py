@@ -214,7 +214,7 @@ class DataFormatFallback:
                 if all(line.strip().replace('.','',1).replace('-','',1).isdigit() for line in lines if line.strip()):
                     has_header = False
                     logger.info("CSV fallback detected no header (single numeric column)")
-        except:
+        except (UnicodeDecodeError, ValueError, IndexError):
             pass
         
         strategies = [

@@ -9,7 +9,6 @@ import re
 from typing import Optional, Dict, Any, Tuple
 from urllib.parse import urljoin
 from io import BytesIO
-from datetime import datetime
 
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -22,7 +21,7 @@ from PIL import Image
 import pytesseract
 
 from .visualization import Visualizer
-from .fallback_strategies import DataFormatFallback, NetworkFallback
+from .fallback_strategies import DataFormatFallback
 
 
 class EnhancedDataProcessor:
@@ -81,7 +80,8 @@ class EnhancedDataProcessor:
             
             if has_header:
                 logger.info("CSV appears to have header")
-        except:
+        except (UnicodeDecodeError, ValueError, IndexError) as e:
+            logger.debug(f"Header detection error: {e}")
             has_header = True
         
         for delimiter in [',', '\t', ';', '|']:
@@ -99,7 +99,7 @@ class EnhancedDataProcessor:
                     if registry:
                         registry.record("csv_parsing", f"manual_delimiter_{delimiter}")
                     return df
-            except:
+            except (pd.errors.ParserError, ValueError, UnicodeDecodeError):
                 continue
         
         df = pd.read_csv(BytesIO(content), header=0 if has_header else None, **kwargs)
@@ -420,7 +420,7 @@ class DataAnalyzer:
             try:
                 page_num = int(task_info['page_number'])
                 kwargs['page_numbers'] = [page_num]
-            except:
+            except (ValueError, TypeError, KeyError):
                 pass
         
         # Extract file extension safely
