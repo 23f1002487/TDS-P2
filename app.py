@@ -319,7 +319,7 @@ async def health_check():
     }
 
 
-@app.post("/quiz/", response_model=QuizResponse, tags=["Quiz"], 
+@app.post("/quiz", response_model=QuizResponse, tags=["Quiz"], 
           status_code=status.HTTP_200_OK,
           responses={
               200: {"description": "Quiz accepted for processing"},
