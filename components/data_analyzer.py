@@ -173,6 +173,8 @@ class EnhancedDataProcessor:
     
     def clean_column_names(self, df):
         """Standardize column names"""
+        if df.empty or len(df.columns) == 0:
+            return df
         df = df.copy()
         df.columns = (
             df.columns
